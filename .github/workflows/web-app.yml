@@ -9,8 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      PIPENV_PIPFILE: web-app/Pipfile
     steps:
       - uses: actions/checkout@v3
 
@@ -22,6 +20,7 @@ jobs:
       - name: Install pipenv and dependencies
         run: |
           pip install --user pipenv
+          cd web-app
           pipenv install --dev
 
       - name: Run tests
