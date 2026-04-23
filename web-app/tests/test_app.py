@@ -43,7 +43,11 @@ def test_health_error(http_client):
 
 def test_save_playlist_valid(http_client):
     """Test POST /api/playlists with a valid payload returns 201."""
-    payload = {"tracks": [{"id": 1, "title": "Test Track", "artist": "Artist", "duration": "3:00"}]}
+    payload = {
+        "tracks": [
+            {"id": 1, "title": "Test Track", "artist": "Artist", "duration": "3:00"}
+        ]
+    }
     res = http_client.post("/api/playlists", json=payload)
     assert res.status_code == 201
     data = res.get_json()
