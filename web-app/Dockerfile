@@ -7,7 +7,7 @@ ENV PIPENV_VENV_IN_PROJECT=1
 RUN pip install --no-cache-dir pipenv
 
 COPY Pipfile Pipfile.lock* ./
-RUN pipenv install --skip-lock
+RUN pipenv install --deploy
 
 COPY . .
 
