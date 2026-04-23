@@ -4,9 +4,11 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - MONGO_URI=mongodb://mongo:27017/
+       - MONGO_URI=mongodb://mongo:27017/webapp
     depends_on:
       - mongo
+    networks:
+      - app-network
 
   mongo:
     image: mongo:7
@@ -14,6 +16,12 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+      - ./mongodb/init:/docker-entrypoint-initdb.d
+    networks:
+      - app-network
 
 volumes:
   mongo_data:
+
+networks:
+  app-network:
