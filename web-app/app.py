@@ -1,8 +1,9 @@
 """Flask web application with MongoDB connection."""
 
 import os
+from datetime import datetime, timezone
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 from pymongo import MongoClient
 
 app = Flask(__name__)
@@ -26,6 +27,20 @@ def health():
         return jsonify({"status": "ok", "mongo": "connected"})
     except Exception as e:  # pylint: disable=broad-exception-caught
         return jsonify({"status": "error", "mongo": str(e)}), 500
+
+
+@app.route("/api/playlists", methods=["POST"])
+def save_playlist():
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data.get("tracks"), list):
+        return jsonify({"ok": False, "message": "Invalid payload"}), 400
+    doc = {
+        "tracks": data["tracks"],
+        "savedAt": data.get("savedAt", datetime.now(timezone.utc).isoformat()),
+        "createdAt": datetime.now(timezone.utc),
+    }
+    result = db["playlists"].insert_one(doc)
+    return jsonify({"ok": True, "id": str(result.inserted_id)}), 201
 
 
 if __name__ == "__main__":
