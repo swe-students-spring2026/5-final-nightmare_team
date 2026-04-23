@@ -1,7 +1,10 @@
-from flask import Flask, render_template, jsonify, request
-from pymongo import MongoClient
-from datetime import datetime, timezone
+"""Flask web application with MongoDB connection."""
+
 import os
+from datetime import datetime, timezone
+
+from flask import Flask, jsonify, render_template, request
+from pymongo import MongoClient
 
 app = Flask(__name__)
 
@@ -12,15 +15,17 @@ db = client["webapp"]
 
 @app.route("/")
 def index():
+    """Render the main page."""
     return render_template("index.html")
 
 
 @app.route("/health")
 def health():
+    """Check MongoDB connectivity and return status."""
     try:
         client.admin.command("ping")
         return jsonify({"status": "ok", "mongo": "connected"})
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         return jsonify({"status": "error", "mongo": str(e)}), 500
 
 

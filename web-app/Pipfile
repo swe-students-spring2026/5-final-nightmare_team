@@ -10,6 +10,8 @@ pymongo = "==4.10.1"
 [dev-packages]
 pytest = "*"
 pytest-cov = "*"
+pylint = "*"
+black = "*"
 
 [requires]
 python_version = "3.12"
