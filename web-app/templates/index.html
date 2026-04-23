@@ -3,34 +3,267 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Web App</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
-    h1 { color: #333; }
-    #status { margin-top: 20px; padding: 12px; border-radius: 6px; background: #f0f0f0; }
-    .ok { background: #d4edda; color: #155724; }
-    .error { background: #f8d7da; color: #721c24; }
-  </style>
-</head>
-<body>
-  <h1>Web App</h1>
-  <p>Welcome! This app is connected to MongoDB.</p>
-  <button onclick="checkHealth()">Check DB Connection</button>
-  <div id="status"></div>
-
+  <title>Playlist Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    async function checkHealth() {
-      const el = document.getElementById("status");
-      try {
-        const res = await fetch("/health");
-        const data = await res.json();
-        el.textContent = JSON.stringify(data, null, 2);
-        el.className = data.status === "ok" ? "ok" : "error";
-      } catch (e) {
-        el.textContent = "Request failed: " + e;
-        el.className = "error";
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            spotify: {
+              green:   '#1DB954',
+              black:   '#121212',
+              surface: '#181818',
+              card:    '#282828',
+              subtle:  '#B3B3B3',
+            }
+          },
+          keyframes: {
+            pulse: {
+              '0%, 100%': { opacity: '1' },
+              '50%':       { opacity: '.4' },
+            }
+          },
+          animation: {
+            'spin-slow': 'spin 2s linear infinite',
+          }
+        }
       }
     }
   </script>
+  <style>
+    /* Thin scrollbar for the main area */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #535353; border-radius: 3px; }
+    /* Range input accent */
+    input[type=range] { accent-color: #1DB954; }
+    /* Genre checkbox custom style */
+    .genre-chip input:checked + span {
+      background-color: #1DB954;
+      color: #000;
+      border-color: #1DB954;
+    }
+  </style>
+</head>
+<body class="bg-spotify-black text-white min-h-screen flex overflow-hidden font-sans">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+  <aside id="sidebar"
+    class="w-64 shrink-0 bg-black flex flex-col py-6 px-4 fixed inset-y-0 left-0 z-30
+           transition-transform duration-300 md:translate-x-0 -translate-x-full">
+
+    <!-- Logo -->
+    <div class="flex items-center gap-2 mb-10 px-2">
+      <svg class="w-8 h-8 text-spotify-green fill-current" viewBox="0 0 24 24">
+        <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477
+                 10-10S17.523 2 12 2zm4.586 14.424a.622.622 0 0
+                 1-.857.207c-2.348-1.435-5.304-1.76-8.785-.964a.623.623
+                 0 0 1-.277-1.215c3.809-.87 7.076-.496 9.713 1.115a.623.623
+                 0 0 1 .206.857zm1.223-2.722a.78.78 0 0
+                 1-1.072.257c-2.687-1.652-6.785-2.131-9.965-1.166a.78.78
+                 0 1 1-.453-1.492c3.633-1.103 8.147-.569
+                 11.233 1.329a.78.78 0 0 1 .257 1.072zm.105-2.835C14.692
+                 8.95 9.375 8.775 6.297 9.71a.937.937 0 1
+                 1-.543-1.792c3.532-1.072 9.404-.865
+                 13.115 1.338a.937.937 0 0 1-.955 1.611z"/>
+      </svg>
+      <span class="text-xl font-bold tracking-tight">Vibe<span class="text-spotify-green">List</span></span>
+    </div>
+
+    <!-- Nav links -->
+    <nav aria-label="Main navigation">
+      <ul class="space-y-1">
+        <li>
+          <a href="#generator" data-nav="generator"
+             class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold
+                    text-white bg-spotify-card transition-colors hover:bg-spotify-card">
+            <svg class="w-5 h-5 fill-current text-spotify-green" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+            Generator
+          </a>
+        </li>
+        <li>
+          <a href="#saved" data-nav="saved"
+             class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium
+                    text-spotify-subtle transition-colors hover:text-white hover:bg-spotify-card">
+            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M19 11H7.83l4.88-4.88c.39-.39.39-1.03
+                 0-1.42-.39-.39-1.02-.39-1.41 0l-6.59 6.59c-.39.39-.39
+                 1.02 0 1.41l6.59 6.59c.39.39 1.02.39 1.41
+                 0 .39-.39.39-1.02 0-1.41L7.83 13H19c.55 0
+                 1-.45 1-1s-.45-1-1-1z"/></svg>
+            Saved Playlists
+          </a>
+        </li>
+        <li>
+          <a href="#settings" data-nav="settings"
+             class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium
+                    text-spotify-subtle transition-colors hover:text-white hover:bg-spotify-card">
+            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94
+                 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24
+                 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47
+                 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03
+                 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38
+                 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24
+                 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12
+                 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            Settings
+          </a>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- DB health pill -->
+    <div class="mt-auto">
+      <button id="healthBtn"
+        class="w-full flex items-center justify-center gap-2 text-xs text-spotify-subtle
+               border border-spotify-card rounded-full py-2 hover:border-spotify-green
+               hover:text-white transition-colors">
+        <span id="healthDot" class="w-2 h-2 rounded-full bg-spotify-subtle"></span>
+        <span id="healthLabel">Check DB</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Mobile hamburger -->
+  <button id="menuToggle" aria-label="Open menu"
+    class="md:hidden fixed top-4 left-4 z-40 bg-spotify-card p-2 rounded-md">
+    <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+      <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+    </svg>
+  </button>
+
+  <!-- Sidebar backdrop (mobile) -->
+  <div id="sidebarBackdrop"
+    class="hidden fixed inset-0 bg-black/60 z-20 md:hidden"
+    aria-hidden="true"></div>
+
+  <!-- ── Main content ───────────────────────────────────────────────────── -->
+  <main class="flex-1 md:ml-64 overflow-y-auto h-screen">
+    <div class="max-w-3xl mx-auto px-6 py-10">
+
+      <!-- Page header -->
+      <header class="mb-8">
+        <h1 class="text-4xl font-bold">Generate a Playlist</h1>
+        <p class="text-spotify-subtle mt-1 text-sm">Describe your vibe and let AI do the rest.</p>
+      </header>
+
+      <!-- ── Generator form ─────────────────────────────────────────────── -->
+      <section id="generatorSection" aria-label="Playlist generator form">
+        <form id="generatorForm" novalidate class="space-y-6">
+
+          <!-- Vibe -->
+          <div class="bg-spotify-surface rounded-xl p-5 space-y-2">
+            <label for="vibe" class="block text-sm font-semibold">
+              Your Vibe
+              <span class="text-spotify-subtle font-normal ml-1">— describe in natural language</span>
+            </label>
+            <textarea id="vibe" name="vibe" rows="3" placeholder="e.g. Late-night drive through a rainy city, feeling nostalgic but hopeful…"
+              class="w-full bg-spotify-card border border-transparent focus:border-spotify-green focus:outline-none
+                     rounded-lg px-4 py-3 text-sm text-white placeholder-spotify-subtle resize-none
+                     transition-colors"></textarea>
+          </div>
+
+          <!-- Genres -->
+          <div class="bg-spotify-surface rounded-xl p-5 space-y-3">
+            <p class="text-sm font-semibold">Genre</p>
+            <div id="genreGrid" class="flex flex-wrap gap-2">
+              <!-- chips injected by JS -->
+            </div>
+          </div>
+
+          <!-- Playlist size -->
+          <div class="bg-spotify-surface rounded-xl p-5 space-y-3">
+            <label for="playlistSize" class="flex items-center justify-between text-sm font-semibold">
+              Playlist Size
+              <span class="text-spotify-green font-bold text-base" id="sizeDisplay">20 tracks</span>
+            </label>
+            <input type="range" id="playlistSize" name="playlistSize"
+                   min="5" max="50" value="20" step="1"
+                   class="w-full h-2 rounded-full appearance-none cursor-pointer bg-spotify-card" />
+            <div class="flex justify-between text-xs text-spotify-subtle">
+              <span>5</span><span>50</span>
+            </div>
+          </div>
+
+          <!-- Era + Seed Artists -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="bg-spotify-surface rounded-xl p-5 space-y-2">
+              <label for="era" class="block text-sm font-semibold">
+                Musical Era
+              </label>
+              <input type="text" id="era" name="era" placeholder="e.g. 90s, 2010s, Classic Rock era"
+                class="w-full bg-spotify-card border border-transparent focus:border-spotify-green focus:outline-none
+                       rounded-lg px-4 py-2.5 text-sm text-white placeholder-spotify-subtle transition-colors" />
+            </div>
+            <div class="bg-spotify-surface rounded-xl p-5 space-y-2">
+              <label for="seedArtists" class="block text-sm font-semibold">
+                Seed Artists
+              </label>
+              <input type="text" id="seedArtists" name="seedArtists" placeholder="e.g. Radiohead, Portishead"
+                class="w-full bg-spotify-card border border-transparent focus:border-spotify-green focus:outline-none
+                       rounded-lg px-4 py-2.5 text-sm text-white placeholder-spotify-subtle transition-colors" />
+            </div>
+          </div>
+
+          <!-- Validation message -->
+          <p id="formError" class="hidden text-red-400 text-sm pl-1"></p>
+
+          <!-- Generate button -->
+          <button type="submit" id="generateBtn"
+            class="w-full bg-spotify-green hover:bg-green-400 active:scale-95
+                   text-black font-bold py-4 rounded-full transition-all duration-150
+                   flex items-center justify-center gap-3 text-sm tracking-widest uppercase">
+            <span id="btnLabel">Generate Playlist</span>
+            <!-- Loading spinner (hidden by default) -->
+            <svg id="btnSpinner" class="hidden w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+            </svg>
+          </button>
+
+        </form>
+      </section>
+
+      <!-- ── Results ────────────────────────────────────────────────────── -->
+      <section id="resultsSection" aria-label="Generated playlist results" class="hidden mt-10">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-2xl font-bold">Your Playlist</h2>
+          <span id="trackCount" class="text-spotify-subtle text-sm"></span>
+        </div>
+
+        <!-- Track list -->
+        <div id="trackList" class="space-y-2"></div>
+
+        <!-- Save button -->
+        <div class="mt-6 flex flex-col sm:flex-row gap-3">
+          <button id="saveBtn"
+            class="flex-1 bg-spotify-green hover:bg-green-400 active:scale-95
+                   text-black font-bold py-3 rounded-full transition-all duration-150
+                   flex items-center justify-center gap-2 text-sm tracking-wider uppercase">
+            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+              <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0
+                       2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3
+                       3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+            </svg>
+            Save to MongoDB
+          </button>
+          <button id="regenerateBtn"
+            class="flex-1 border border-spotify-subtle hover:border-white text-white
+                   font-semibold py-3 rounded-full transition-colors text-sm tracking-wider uppercase">
+            Regenerate
+          </button>
+        </div>
+
+        <!-- Save status toast (hidden by default) -->
+        <div id="saveToast"
+          class="hidden mt-4 px-4 py-3 rounded-lg text-sm font-medium"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ES6 module entry point -->
+  <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
