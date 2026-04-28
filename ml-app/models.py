@@ -4,16 +4,13 @@ from dataclasses import dataclass
 
 
 EVENT_WEIGHTS: dict[str, float] = {
-    "play": 1.0,
-    "skip": -1.0,
     "like": 5.0,
     "dislike": -5.0,
     "save": 4.0,
-    "repeat": 3.0,
 }
 
 
-POSITIVE_EVENT_TYPES = {"play", "like", "save", "repeat"}
+POSITIVE_EVENT_TYPES = {"like", "save"}
 
 
 @dataclass(frozen=True)

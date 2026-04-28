@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-EventType = Literal["play", "skip", "like", "dislike", "save", "repeat"]
+EventType = Literal["like", "dislike", "save"]
 
 
 class HealthResponse(BaseModel):
