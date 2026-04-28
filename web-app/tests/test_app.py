@@ -39,3 +39,33 @@ def test_health_error(http_client):
     assert res.status_code == 500
     data = res.get_json()
     assert data["status"] == "error"
+
+
+def test_save_playlist_valid(http_client):
+    """Test POST /api/playlists with a valid payload returns 201."""
+    payload = {
+        "tracks": [
+            {"id": 1, "title": "Test Track", "artist": "Artist", "duration": "3:00"}
+        ]
+    }
+    res = http_client.post("/api/playlists", json=payload)
+    assert res.status_code == 201
+    data = res.get_json()
+    assert data["ok"] is True
+    assert "id" in data
+
+
+def test_save_playlist_missing_tracks(http_client):
+    """Test POST /api/playlists with no tracks key returns 400."""
+    res = http_client.post("/api/playlists", json={})
+    assert res.status_code == 400
+    data = res.get_json()
+    assert data["ok"] is False
+
+
+def test_save_playlist_invalid_tracks_type(http_client):
+    """Test POST /api/playlists with tracks as non-list returns 400."""
+    res = http_client.post("/api/playlists", json={"tracks": "not-a-list"})
+    assert res.status_code == 400
+    data = res.get_json()
+    assert data["ok"] is False
