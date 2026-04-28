@@ -29,6 +29,12 @@ def health():
         return jsonify({"status": "error", "mongo": str(e)}), 500
 
 
+@app.route("/settings")
+def settings():
+    """Render the settings page."""
+    return render_template("settings.html")
+
+
 @app.route("/api/playlists", methods=["POST"])
 def save_playlist():
     data = request.get_json(silent=True)
