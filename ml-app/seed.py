@@ -1,3 +1,5 @@
+"""Seed script to populate the database with sample data."""
+
 from __future__ import annotations
 
 from app import database
@@ -45,6 +47,7 @@ EVENTS = [
 
 
 def seed() -> None:
+    """Reset the database and insert sample users, songs, and events."""
     database.reset_db()
 
     for user_id, name in USERS:

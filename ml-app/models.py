@@ -1,3 +1,5 @@
+"""Domain models and constants for the music recommender."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,6 +20,8 @@ POSITIVE_EVENT_TYPES = {"play", "like", "save", "repeat"}
 
 @dataclass(frozen=True)
 class Song:
+    """Immutable song record used for mock recommendations."""
+
     song_id: str
     title: str
     artist: str

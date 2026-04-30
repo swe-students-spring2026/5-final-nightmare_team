@@ -1,3 +1,5 @@
+"""SQLite database connection and query helpers for the music recommender."""
+
 from __future__ import annotations
 
 import os
@@ -10,10 +12,12 @@ DEFAULT_DB_PATH = "music_recommender.db"
 
 
 def get_db_path() -> str:
+    """Return the database file path from env or the default."""
     return os.getenv("MUSIC_RECOMMENDER_DB", DEFAULT_DB_PATH)
 
 
 def get_connection() -> sqlite3.Connection:
+    """Open and return a SQLite connection with foreign keys enabled."""
     db_path = get_db_path()
     parent = Path(db_path).parent
     if str(parent) != ".":
@@ -26,6 +30,7 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
+    """Create all tables if they do not already exist."""
     with get_connection() as connection:
         connection.executescript(
             """
@@ -56,6 +61,7 @@ def init_db() -> None:
 
 
 def reset_db() -> None:
+    """Drop all tables and recreate them."""
     with get_connection() as connection:
         connection.executescript(
             """
@@ -68,6 +74,7 @@ def reset_db() -> None:
 
 
 def execute(query: str, params: tuple[Any, ...] = ()) -> sqlite3.Cursor:
+    """Execute a write query and return the cursor."""
     with get_connection() as connection:
         cursor = connection.execute(query, params)
         connection.commit()
@@ -75,10 +82,12 @@ def execute(query: str, params: tuple[Any, ...] = ()) -> sqlite3.Cursor:
 
 
 def fetch_one(query: str, params: tuple[Any, ...] = ()) -> sqlite3.Row | None:
+    """Return the first row of a query result, or None."""
     with get_connection() as connection:
         return connection.execute(query, params).fetchone()
 
 
 def fetch_all(query: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
+    """Return all rows of a query result."""
     with get_connection() as connection:
         return connection.execute(query, params).fetchall()
