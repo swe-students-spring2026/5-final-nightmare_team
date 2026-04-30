@@ -5,7 +5,6 @@ from __future__ import annotations
 from app import database
 from app.models import EVENT_WEIGHTS
 
-
 USERS = [
     ("u1", "Avery"),
     ("u2", "Jordan"),

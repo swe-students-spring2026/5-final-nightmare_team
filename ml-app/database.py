@@ -7,7 +7,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_DB_PATH = "music_recommender.db"
 
 
@@ -32,8 +31,7 @@ def get_connection() -> sqlite3.Connection:
 def init_db() -> None:
     """Create all tables if they do not already exist."""
     with get_connection() as connection:
-        connection.executescript(
-            """
+        connection.executescript("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id TEXT PRIMARY KEY,
                 name TEXT
@@ -56,20 +54,17 @@ def init_db() -> None:
                 FOREIGN KEY (user_id) REFERENCES users(user_id),
                 FOREIGN KEY (song_id) REFERENCES songs(song_id)
             );
-            """
-        )
+            """)
 
 
 def reset_db() -> None:
     """Drop all tables and recreate them."""
     with get_connection() as connection:
-        connection.executescript(
-            """
+        connection.executescript("""
             DROP TABLE IF EXISTS events;
             DROP TABLE IF EXISTS songs;
             DROP TABLE IF EXISTS users;
-            """
-        )
+            """)
     init_db()
 
 

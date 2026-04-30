@@ -30,9 +30,13 @@ class ItemBasedRecommender:
     def fit(self, events: pd.DataFrame, songs: pd.DataFrame) -> None:
         """Train the model on interaction events and song metadata."""
         if events.empty:
-            raise NotEnoughDataError("At least one event is required to train the model.")
+            raise NotEnoughDataError(
+                "At least one event is required to train the model."
+            )
         if songs.empty or songs["song_id"].nunique() < 2:
-            raise NotEnoughDataError("At least two songs are required to train the model.")
+            raise NotEnoughDataError(
+                "At least two songs are required to train the model."
+            )
 
         required_event_columns = {"user_id", "song_id", "event_type", "weight"}
         if not required_event_columns.issubset(events.columns):
@@ -47,7 +51,9 @@ class ItemBasedRecommender:
         )
 
         if matrix.shape[0] < 1 or matrix.shape[1] < 2:
-            raise NotEnoughDataError("Need events across at least two songs to train the model.")
+            raise NotEnoughDataError(
+                "Need events across at least two songs to train the model."
+            )
 
         similarity = cosine_similarity(matrix.T)
         self.song_similarity = pd.DataFrame(
@@ -57,7 +63,9 @@ class ItemBasedRecommender:
         )
         self.user_song_matrix = matrix
         self.events = events.copy()
-        self.songs = songs.drop_duplicates(subset=["song_id"]).set_index("song_id", drop=False)
+        self.songs = songs.drop_duplicates(subset=["song_id"]).set_index(
+            "song_id", drop=False
+        )
         self.trained = True
 
     def recommend(self, user_id: str, k: int) -> list[dict[str, object]]:
@@ -68,7 +76,8 @@ class ItemBasedRecommender:
 
         user_events = self.events[self.events["user_id"] == user_id]
         positive_events = user_events[
-            (user_events["weight"] > 0) & (user_events["event_type"].isin(POSITIVE_EVENT_TYPES))
+            (user_events["weight"] > 0)
+            & (user_events["event_type"].isin(POSITIVE_EVENT_TYPES))
         ]
         if positive_events.empty:
             raise NotEnoughDataError(
@@ -85,7 +94,10 @@ class ItemBasedRecommender:
 
             similarities = self.song_similarity.loc[source_song_id]
             for candidate_song_id, similarity in similarities.items():
-                if candidate_song_id in interacted_song_ids or candidate_song_id == source_song_id:
+                if (
+                    candidate_song_id in interacted_song_ids
+                    or candidate_song_id == source_song_id
+                ):
                     continue
                 candidate_scores[candidate_song_id] = candidate_scores.get(
                     candidate_song_id, 0.0
@@ -97,7 +109,9 @@ class ItemBasedRecommender:
             reverse=True,
         )
         positive_ranked = [(song_id, score) for song_id, score in ranked if score > 0]
-        return [self._song_result(song_id, score) for song_id, score in positive_ranked[:k]]
+        return [
+            self._song_result(song_id, score) for song_id, score in positive_ranked[:k]
+        ]
 
     def similar_songs(self, song_id: str, k: int) -> list[dict[str, object]]:
         """Return the top-k songs most similar to the given song."""
@@ -105,7 +119,9 @@ class ItemBasedRecommender:
         if song_id not in self.song_similarity.index:
             raise KeyError(f"Unknown song: {song_id}")
 
-        similarities = self.song_similarity.loc[song_id].drop(labels=[song_id], errors="ignore")
+        similarities = self.song_similarity.loc[song_id].drop(
+            labels=[song_id], errors="ignore"
+        )
         ranked = similarities.sort_values(ascending=False).head(k)
         return [
             self._song_result(similar_song_id, float(score))

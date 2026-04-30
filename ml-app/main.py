@@ -26,7 +26,6 @@ from app.schemas import (
     UserResponse,
 )
 
-
 recommender = ItemBasedRecommender()
 
 
@@ -157,7 +156,9 @@ def get_similar_songs(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     if not similar:
-        raise HTTPException(status_code=409, detail="Not enough data to find similar songs.")
+        raise HTTPException(
+            status_code=409, detail="Not enough data to find similar songs."
+        )
 
     return SimilarSongsResponse(
         song_id=song_id,
@@ -169,8 +170,12 @@ def get_similar_songs(
 @app.post("/train", response_model=TrainResponse)
 def train() -> TrainResponse:
     """Train the recommendation model on all stored events."""
-    events = pd.DataFrame([dict(row) for row in database.fetch_all("SELECT * FROM events")])
-    songs = pd.DataFrame([dict(row) for row in database.fetch_all("SELECT * FROM songs")])
+    events = pd.DataFrame(
+        [dict(row) for row in database.fetch_all("SELECT * FROM events")]
+    )
+    songs = pd.DataFrame(
+        [dict(row) for row in database.fetch_all("SELECT * FROM songs")]
+    )
     users = database.fetch_all("SELECT * FROM users")
 
     try:
@@ -189,12 +194,18 @@ def train() -> TrainResponse:
 
 def _user_exists(user_id: str) -> bool:
     """Return True if the user exists in the database."""
-    return database.fetch_one("SELECT user_id FROM users WHERE user_id = ?", (user_id,)) is not None
+    return (
+        database.fetch_one("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+        is not None
+    )
 
 
 def _song_exists(song_id: str) -> bool:
     """Return True if the song exists in the database."""
-    return database.fetch_one("SELECT song_id FROM songs WHERE song_id = ?", (song_id,)) is not None
+    return (
+        database.fetch_one("SELECT song_id FROM songs WHERE song_id = ?", (song_id,))
+        is not None
+    )
 
 
 def _mock_items(k: int, exclude_song_id: str | None = None) -> list[RecommendationItem]:

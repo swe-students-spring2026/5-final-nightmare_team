@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 EVENT_WEIGHTS: dict[str, float] = {
     "play": 1.0,
     "skip": -1.0,
