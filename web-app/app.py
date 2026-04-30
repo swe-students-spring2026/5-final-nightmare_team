@@ -1,4 +1,4 @@
-"""Flask web application with MongoDB connection."""
+"""Flask web application with MongoDB Atlas connection."""
 
 import os
 from datetime import datetime, timezone
@@ -8,9 +8,14 @@ from pymongo import MongoClient
 
 app = Flask(__name__)
 
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb://mongo:27017/")
+MONGO_URI = os.environ.get("MONGO_URI", "")
 client = MongoClient(MONGO_URI)
 db = client["webapp"]
+
+users_col = db["users"]
+songs_col = db["songs"]
+events_col = db["events"]
+playlists_col = db["playlists"]
 
 
 @app.route("/")
@@ -45,7 +50,7 @@ def save_playlist():
         "savedAt": data.get("savedAt", datetime.now(timezone.utc).isoformat()),
         "createdAt": datetime.now(timezone.utc),
     }
-    result = db["playlists"].insert_one(doc)
+    result = playlists_col.insert_one(doc)
     return jsonify({"ok": True, "id": str(result.inserted_id)}), 201
 
 
