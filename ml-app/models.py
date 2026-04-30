@@ -1,7 +1,8 @@
+"""Domain models and constants for the music recommender."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-
 
 EVENT_WEIGHTS: dict[str, float] = {
     "play": 1.0,
@@ -18,6 +19,8 @@ POSITIVE_EVENT_TYPES = {"play", "like", "save", "repeat"}
 
 @dataclass(frozen=True)
 class Song:
+    """Immutable song record used for mock recommendations."""
+
     song_id: str
     title: str
     artist: str

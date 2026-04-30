@@ -4,13 +4,24 @@ services:
     ports:
       - "5000:5000"
     environment:
-       - MONGO_URI=mongodb://mongo:27017/webapp
+      - MONGO_URI=${MONGO_URI}
     volumes:
       - ./web-app/app.py:/app/app.py
       - ./web-app/templates:/app/templates
       - ./web-app/static:/app/static
-    depends_on:
-      - mongo
+    networks:
+      - app-network
+
+  ml-app:
+    build:
+      context: .
+      dockerfile: ml-app/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MUSIC_RECOMMENDER_DB=/data/music_recommender.db
+    volumes:
+      - ml_data:/data
     networks:
       - app-network
 
@@ -26,6 +37,7 @@ services:
 
 volumes:
   mongo_data:
+  ml_data:
 
 networks:
   app-network:

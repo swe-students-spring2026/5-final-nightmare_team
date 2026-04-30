@@ -1,3 +1,5 @@
+"""FastAPI application for the music recommendation service."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -24,12 +26,12 @@ from app.schemas import (
     UserResponse,
 )
 
-
 recommender = ItemBasedRecommender()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Initialise the database on startup."""
     database.init_db()
     yield
 
@@ -44,11 +46,13 @@ app = FastAPI(
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
+    """Return service health status."""
     return HealthResponse(status="ok")
 
 
 @app.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate) -> UserResponse:
+    """Create a new user."""
     try:
         database.execute(
             "INSERT INTO users (user_id, name) VALUES (?, ?)",
@@ -61,6 +65,7 @@ def create_user(user: UserCreate) -> UserResponse:
 
 @app.post("/songs", response_model=SongResponse, status_code=status.HTTP_201_CREATED)
 def create_song(song: SongCreate) -> SongResponse:
+    """Create a new song."""
     try:
         database.execute(
             "INSERT INTO songs (song_id, title, artist, genre) VALUES (?, ?, ?, ?)",
@@ -73,6 +78,7 @@ def create_song(song: SongCreate) -> SongResponse:
 
 @app.post("/events", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
 def record_event(event: EventCreate) -> EventResponse:
+    """Record a user-song interaction event."""
     if not _user_exists(event.user_id):
         raise HTTPException(status_code=404, detail="Unknown user.")
     if not _song_exists(event.song_id):
@@ -97,6 +103,7 @@ def get_recommendations(
     user_id: str,
     k: int = Query(default=10, ge=1, le=100),
 ) -> RecommendationResponse:
+    """Return the top-k song recommendations for a user."""
     if not _user_exists(user_id):
         raise HTTPException(status_code=404, detail="Unknown user.")
 
@@ -115,7 +122,10 @@ def get_recommendations(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     if not recommendations:
-        raise HTTPException(status_code=409, detail="Not enough unseen song data for recommendations.")
+        raise HTTPException(
+            status_code=409,
+            detail="Not enough unseen song data for recommendations.",
+        )
 
     return RecommendationResponse(
         user_id=user_id,
@@ -129,6 +139,7 @@ def get_similar_songs(
     song_id: str,
     k: int = Query(default=10, ge=1, le=100),
 ) -> SimilarSongsResponse:
+    """Return the top-k songs most similar to the given song."""
     if not _song_exists(song_id):
         raise HTTPException(status_code=404, detail="Unknown song.")
 
@@ -145,7 +156,9 @@ def get_similar_songs(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     if not similar:
-        raise HTTPException(status_code=409, detail="Not enough data to find similar songs.")
+        raise HTTPException(
+            status_code=409, detail="Not enough data to find similar songs."
+        )
 
     return SimilarSongsResponse(
         song_id=song_id,
@@ -156,8 +169,13 @@ def get_similar_songs(
 
 @app.post("/train", response_model=TrainResponse)
 def train() -> TrainResponse:
-    events = pd.DataFrame([dict(row) for row in database.fetch_all("SELECT * FROM events")])
-    songs = pd.DataFrame([dict(row) for row in database.fetch_all("SELECT * FROM songs")])
+    """Train the recommendation model on all stored events."""
+    events = pd.DataFrame(
+        [dict(row) for row in database.fetch_all("SELECT * FROM events")]
+    )
+    songs = pd.DataFrame(
+        [dict(row) for row in database.fetch_all("SELECT * FROM songs")]
+    )
     users = database.fetch_all("SELECT * FROM users")
 
     try:
@@ -175,15 +193,27 @@ def train() -> TrainResponse:
 
 
 def _user_exists(user_id: str) -> bool:
-    return database.fetch_one("SELECT user_id FROM users WHERE user_id = ?", (user_id,)) is not None
+    """Return True if the user exists in the database."""
+    return (
+        database.fetch_one("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+        is not None
+    )
 
 
 def _song_exists(song_id: str) -> bool:
-    return database.fetch_one("SELECT song_id FROM songs WHERE song_id = ?", (song_id,)) is not None
+    """Return True if the song exists in the database."""
+    return (
+        database.fetch_one("SELECT song_id FROM songs WHERE song_id = ?", (song_id,))
+        is not None
+    )
 
 
 def _mock_items(k: int, exclude_song_id: str | None = None) -> list[RecommendationItem]:
-    rows = database.fetch_all("SELECT song_id, title, artist, genre FROM songs ORDER BY song_id LIMIT ?", (k + 1,))
+    """Return up to k mock recommendation items, optionally excluding a song."""
+    rows = database.fetch_all(
+        "SELECT song_id, title, artist, genre FROM songs ORDER BY song_id LIMIT ?",
+        (k + 1,),
+    )
     items: list[RecommendationItem] = []
 
     for index, row in enumerate(rows):

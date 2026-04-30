@@ -1,3 +1,5 @@
+"""Item-based collaborative filtering recommender."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -7,15 +9,18 @@ from app.models import POSITIVE_EVENT_TYPES
 
 
 class RecommenderNotReadyError(RuntimeError):
-    pass
+    """Raised when the model is used before training."""
 
 
 class NotEnoughDataError(ValueError):
-    pass
+    """Raised when there is insufficient data to train or recommend."""
 
 
 class ItemBasedRecommender:
+    """Item-based collaborative filter using cosine similarity."""
+
     def __init__(self) -> None:
+        """Initialise an untrained recommender."""
         self.trained = False
         self.songs: pd.DataFrame = pd.DataFrame()
         self.events: pd.DataFrame = pd.DataFrame()
@@ -23,10 +28,15 @@ class ItemBasedRecommender:
         self.song_similarity: pd.DataFrame = pd.DataFrame()
 
     def fit(self, events: pd.DataFrame, songs: pd.DataFrame) -> None:
+        """Train the model on interaction events and song metadata."""
         if events.empty:
-            raise NotEnoughDataError("At least one event is required to train the model.")
+            raise NotEnoughDataError(
+                "At least one event is required to train the model."
+            )
         if songs.empty or songs["song_id"].nunique() < 2:
-            raise NotEnoughDataError("At least two songs are required to train the model.")
+            raise NotEnoughDataError(
+                "At least two songs are required to train the model."
+            )
 
         required_event_columns = {"user_id", "song_id", "event_type", "weight"}
         if not required_event_columns.issubset(events.columns):
@@ -41,7 +51,9 @@ class ItemBasedRecommender:
         )
 
         if matrix.shape[0] < 1 or matrix.shape[1] < 2:
-            raise NotEnoughDataError("Need events across at least two songs to train the model.")
+            raise NotEnoughDataError(
+                "Need events across at least two songs to train the model."
+            )
 
         similarity = cosine_similarity(matrix.T)
         self.song_similarity = pd.DataFrame(
@@ -51,20 +63,26 @@ class ItemBasedRecommender:
         )
         self.user_song_matrix = matrix
         self.events = events.copy()
-        self.songs = songs.drop_duplicates(subset=["song_id"]).set_index("song_id", drop=False)
+        self.songs = songs.drop_duplicates(subset=["song_id"]).set_index(
+            "song_id", drop=False
+        )
         self.trained = True
 
     def recommend(self, user_id: str, k: int) -> list[dict[str, object]]:
+        """Return the top-k recommended songs for a user."""
         self._ensure_ready()
         if user_id not in self.user_song_matrix.index:
             raise KeyError(f"Unknown user: {user_id}")
 
         user_events = self.events[self.events["user_id"] == user_id]
         positive_events = user_events[
-            (user_events["weight"] > 0) & (user_events["event_type"].isin(POSITIVE_EVENT_TYPES))
+            (user_events["weight"] > 0)
+            & (user_events["event_type"].isin(POSITIVE_EVENT_TYPES))
         ]
         if positive_events.empty:
-            raise NotEnoughDataError("User does not have enough positive feedback for recommendations.")
+            raise NotEnoughDataError(
+                "User does not have enough positive feedback for recommendations."
+            )
 
         interacted_song_ids = set(user_events["song_id"])
         candidate_scores: dict[str, float] = {}
@@ -76,11 +94,14 @@ class ItemBasedRecommender:
 
             similarities = self.song_similarity.loc[source_song_id]
             for candidate_song_id, similarity in similarities.items():
-                if candidate_song_id in interacted_song_ids or candidate_song_id == source_song_id:
+                if (
+                    candidate_song_id in interacted_song_ids
+                    or candidate_song_id == source_song_id
+                ):
                     continue
-                candidate_scores[candidate_song_id] = candidate_scores.get(candidate_song_id, 0.0) + (
-                    float(event["weight"]) * float(similarity)
-                )
+                candidate_scores[candidate_song_id] = candidate_scores.get(
+                    candidate_song_id, 0.0
+                ) + float(event["weight"]) * float(similarity)
 
         ranked = sorted(
             candidate_scores.items(),
@@ -88,18 +109,27 @@ class ItemBasedRecommender:
             reverse=True,
         )
         positive_ranked = [(song_id, score) for song_id, score in ranked if score > 0]
-        return [self._song_result(song_id, score) for song_id, score in positive_ranked[:k]]
+        return [
+            self._song_result(song_id, score) for song_id, score in positive_ranked[:k]
+        ]
 
     def similar_songs(self, song_id: str, k: int) -> list[dict[str, object]]:
+        """Return the top-k songs most similar to the given song."""
         self._ensure_ready()
         if song_id not in self.song_similarity.index:
             raise KeyError(f"Unknown song: {song_id}")
 
-        similarities = self.song_similarity.loc[song_id].drop(labels=[song_id], errors="ignore")
+        similarities = self.song_similarity.loc[song_id].drop(
+            labels=[song_id], errors="ignore"
+        )
         ranked = similarities.sort_values(ascending=False).head(k)
-        return [self._song_result(similar_song_id, float(score)) for similar_song_id, score in ranked.items()]
+        return [
+            self._song_result(similar_song_id, float(score))
+            for similar_song_id, score in ranked.items()
+        ]
 
     def _song_result(self, song_id: str, score: float) -> dict[str, object]:
+        """Build a result dict for a song with its similarity score."""
         song = self.songs.loc[song_id]
         return {
             "song_id": str(song["song_id"]),
@@ -110,5 +140,6 @@ class ItemBasedRecommender:
         }
 
     def _ensure_ready(self) -> None:
+        """Raise if the model has not been trained yet."""
         if not self.trained:
             raise RecommenderNotReadyError("Model has not been trained yet.")
