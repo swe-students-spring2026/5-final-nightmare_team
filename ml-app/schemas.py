@@ -60,7 +60,7 @@ class EventCreate(BaseModel):
 class EventResponse(BaseModel):
     """Response after recording an event."""
 
-    event_id: int
+    event_id: str
     user_id: str
     song_id: str
     event_type: EventType

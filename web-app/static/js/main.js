@@ -212,7 +212,13 @@ saveBtn.addEventListener('click', async () => {
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving…';
 
-  const result = await savePlaylist(currentPlaylist);
+  let userId = null;
+  try {
+    const s = JSON.parse(localStorage.getItem('vibelist_settings') || '{}');
+    userId = s.displayName || s.email || null;
+  } catch { /* ignore parse errors */ }
+
+  const result = await savePlaylist(currentPlaylist, userId);
 
   saveBtn.disabled = false;
   saveBtn.innerHTML = `

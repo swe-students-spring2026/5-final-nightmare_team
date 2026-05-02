@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("MUSIC_RECOMMENDER_DB", str(tmp_path / "test.db"))
+def client(monkeypatch):
+    monkeypatch.setenv("MONGO_URI", "mongodb://localhost:27017/")
 
     from app import database
     from app import main

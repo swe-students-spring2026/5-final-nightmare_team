@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app import database
+from app.database import get_db, reset_db
 from app.models import EVENT_WEIGHTS
 
 USERS = [
@@ -47,24 +47,25 @@ EVENTS = [
 
 def seed() -> None:
     """Reset the database and insert sample users, songs, and events."""
-    database.reset_db()
+    reset_db()
+    db = get_db()
 
     for user_id, name in USERS:
-        database.execute(
-            "INSERT INTO users (user_id, name) VALUES (?, ?)",
-            (user_id, name),
-        )
+        db["users"].insert_one({"user_id": user_id, "name": name})
 
     for song_id, title, artist, genre in SONGS:
-        database.execute(
-            "INSERT INTO songs (song_id, title, artist, genre) VALUES (?, ?, ?, ?)",
-            (song_id, title, artist, genre),
+        db["songs"].insert_one(
+            {"song_id": song_id, "title": title, "artist": artist, "genre": genre}
         )
 
     for user_id, song_id, event_type in EVENTS:
-        database.execute(
-            "INSERT INTO events (user_id, song_id, event_type, weight) VALUES (?, ?, ?, ?)",
-            (user_id, song_id, event_type, EVENT_WEIGHTS[event_type]),
+        db["events"].insert_one(
+            {
+                "user_id": user_id,
+                "song_id": song_id,
+                "event_type": event_type,
+                "weight": EVENT_WEIGHTS[event_type],
+            }
         )
 
 
