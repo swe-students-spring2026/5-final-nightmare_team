@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 flask = "==3.1.0"
 pymongo = "==4.10.1"
+requests = "*"
 
 [dev-packages]
 pytest = "*"

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, status
+from pymongo.errors import DuplicateKeyError
 
 from app import database
 from app.models import EVENT_WEIGHTS, MOCK_SONGS
@@ -53,12 +53,10 @@ def health() -> HealthResponse:
 @app.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate) -> UserResponse:
     """Create a new user."""
+    db = database.get_db()
     try:
-        database.execute(
-            "INSERT INTO users (user_id, name) VALUES (?, ?)",
-            (user.user_id, user.name),
-        )
-    except sqlite3.IntegrityError as exc:
+        db["users"].insert_one({"user_id": user.user_id, "name": user.name})
+    except DuplicateKeyError as exc:
         raise HTTPException(status_code=409, detail="User already exists.") from exc
     return UserResponse(**user.model_dump())
 
@@ -66,12 +64,17 @@ def create_user(user: UserCreate) -> UserResponse:
 @app.post("/songs", response_model=SongResponse, status_code=status.HTTP_201_CREATED)
 def create_song(song: SongCreate) -> SongResponse:
     """Create a new song."""
+    db = database.get_db()
     try:
-        database.execute(
-            "INSERT INTO songs (song_id, title, artist, genre) VALUES (?, ?, ?, ?)",
-            (song.song_id, song.title, song.artist, song.genre),
+        db["songs"].insert_one(
+            {
+                "song_id": song.song_id,
+                "title": song.title,
+                "artist": song.artist,
+                "genre": song.genre,
+            }
         )
-    except sqlite3.IntegrityError as exc:
+    except DuplicateKeyError as exc:
         raise HTTPException(status_code=409, detail="Song already exists.") from exc
     return SongResponse(**song.model_dump())
 
@@ -84,13 +87,18 @@ def record_event(event: EventCreate) -> EventResponse:
     if not _song_exists(event.song_id):
         raise HTTPException(status_code=404, detail="Unknown song.")
 
+    db = database.get_db()
     weight = EVENT_WEIGHTS[event.event_type]
-    cursor = database.execute(
-        "INSERT INTO events (user_id, song_id, event_type, weight) VALUES (?, ?, ?, ?)",
-        (event.user_id, event.song_id, event.event_type, weight),
+    result = db["events"].insert_one(
+        {
+            "user_id": event.user_id,
+            "song_id": event.song_id,
+            "event_type": event.event_type,
+            "weight": weight,
+        }
     )
     return EventResponse(
-        event_id=int(cursor.lastrowid),
+        event_id=str(result.inserted_id),
         user_id=event.user_id,
         song_id=event.song_id,
         event_type=event.event_type,
@@ -170,13 +178,10 @@ def get_similar_songs(
 @app.post("/train", response_model=TrainResponse)
 def train() -> TrainResponse:
     """Train the recommendation model on all stored events."""
-    events = pd.DataFrame(
-        [dict(row) for row in database.fetch_all("SELECT * FROM events")]
-    )
-    songs = pd.DataFrame(
-        [dict(row) for row in database.fetch_all("SELECT * FROM songs")]
-    )
-    users = database.fetch_all("SELECT * FROM users")
+    db = database.get_db()
+    events = pd.DataFrame(list(db["events"].find({}, {"_id": 0})))
+    songs = pd.DataFrame(list(db["songs"].find({}, {"_id": 0})))
+    users = list(db["users"].find({}))
 
     try:
         recommender.fit(events, songs)
@@ -194,25 +199,24 @@ def train() -> TrainResponse:
 
 def _user_exists(user_id: str) -> bool:
     """Return True if the user exists in the database."""
-    return (
-        database.fetch_one("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
-        is not None
-    )
+    db = database.get_db()
+    return db["users"].find_one({"user_id": user_id}) is not None
 
 
 def _song_exists(song_id: str) -> bool:
     """Return True if the song exists in the database."""
-    return (
-        database.fetch_one("SELECT song_id FROM songs WHERE song_id = ?", (song_id,))
-        is not None
-    )
+    db = database.get_db()
+    return db["songs"].find_one({"song_id": song_id}) is not None
 
 
 def _mock_items(k: int, exclude_song_id: str | None = None) -> list[RecommendationItem]:
     """Return up to k mock recommendation items, optionally excluding a song."""
-    rows = database.fetch_all(
-        "SELECT song_id, title, artist, genre FROM songs ORDER BY song_id LIMIT ?",
-        (k + 1,),
+    db = database.get_db()
+    rows = list(
+        db["songs"]
+        .find({}, {"_id": 0, "song_id": 1, "title": 1, "artist": 1, "genre": 1})
+        .sort("song_id", 1)
+        .limit(k + 1)
     )
     items: list[RecommendationItem] = []
 
@@ -224,7 +228,7 @@ def _mock_items(k: int, exclude_song_id: str | None = None) -> list[Recommendati
                 song_id=row["song_id"],
                 title=row["title"],
                 artist=row["artist"],
-                genre=row["genre"],
+                genre=row.get("genre"),
                 score=round(0.95 - (index * 0.04), 4),
             )
         )
