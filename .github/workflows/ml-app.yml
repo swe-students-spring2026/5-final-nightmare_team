@@ -9,6 +9,8 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      PIPENV_PIPFILE: ml-app/Pipfile
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +33,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: lint
+    env:
+      PIPENV_PIPFILE: ml-app/Pipfile
     services:
       mongo:
         image: mongo:7
