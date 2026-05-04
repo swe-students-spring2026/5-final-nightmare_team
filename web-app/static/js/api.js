@@ -82,6 +82,19 @@ export function generatePlaylist(params) {
 }
 
 /**
+ * @param {string|null} userId - Filter playlists by this user. Pass null for all.
+ * @returns {Promise<Array>}
+ */
+export function fetchPlaylists(userId) {
+  const url = userId
+    ? `/api/playlists?user_id=${encodeURIComponent(userId)}`
+    : '/api/playlists';
+  return fetch(url)
+    .then((res) => res.json())
+    .catch(() => []);
+}
+
+/**
  * @param {Array} tracks - The playlist to persist.
  * @param {string|null} userId - The display name / user identifier from settings.
  * @returns {Promise<{ok: boolean, message: string}>}

@@ -1,4 +1,4 @@
-import { generatePlaylist, savePlaylist } from './api.js';
+import { generatePlaylist, savePlaylist, fetchPlaylists } from './api.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -37,9 +37,21 @@ const formError       = document.getElementById('formError');
 const healthBtn       = document.getElementById('healthBtn');
 const healthDot       = document.getElementById('healthDot');
 const healthLabel     = document.getElementById('healthLabel');
-const menuToggle      = document.getElementById('menuToggle');
-const sidebar         = document.getElementById('sidebar');
-const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+const menuToggle          = document.getElementById('menuToggle');
+const sidebar             = document.getElementById('sidebar');
+const sidebarBackdrop     = document.getElementById('sidebarBackdrop');
+
+// Saved playlists
+const savedSection        = document.getElementById('savedSection');
+const playlistsListView   = document.getElementById('playlistsListView');
+const playlistDetailView  = document.getElementById('playlistDetailView');
+const playlistsList       = document.getElementById('playlistsList');
+const playlistsLoading    = document.getElementById('playlistsLoading');
+const playlistsEmpty      = document.getElementById('playlistsEmpty');
+const playlistDetailMeta  = document.getElementById('playlistDetailMeta');
+const playlistDetailTracks = document.getElementById('playlistDetailTracks');
+const backToPlaylists      = document.getElementById('backToPlaylists');
+const playlistsSort        = document.getElementById('playlistsSort');
 
 // ── Initialise genres ──────────────────────────────────────────────────────
 
@@ -323,6 +335,172 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// ── Nav switching ──────────────────────────────────────────────────────────
+
+const generatorSection = document.getElementById('generatorSection');
+const navLinks = document.querySelectorAll('.nav-link[data-nav]');
+
+function showView(view) {
+  generatorSection.classList.toggle('hidden', view !== 'generator');
+  resultsSection.classList.add('hidden');
+  savedSection.classList.toggle('hidden', view !== 'saved');
+
+  navLinks.forEach((link) => {
+    const active = link.dataset.nav === view;
+    link.classList.toggle('text-white', active);
+    link.classList.toggle('bg-spotify-card', active);
+    link.classList.toggle('font-semibold', active);
+    link.classList.toggle('text-spotify-subtle', !active);
+    link.classList.toggle('font-medium', !active);
+  });
+}
+
+navLinks.forEach((link) => {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    const view = link.dataset.nav;
+    showView(view);
+    if (view === 'saved') loadSavedPlaylists();
+  });
+});
+
+// ── Saved playlists ────────────────────────────────────────────────────────
+
+let cachedPlaylists = [];
+
+function sortedPlaylists() {
+  const order = playlistsSort.value;
+  const copy = [...cachedPlaylists];
+  if (order === 'oldest') {
+    copy.sort((a, b) => new Date(a.savedAt) - new Date(b.savedAt));
+  } else if (order === 'alpha') {
+    copy.sort((a, b) => {
+      const aLabel = (Array.isArray(a.tracks) && a.tracks[0]?.title) || '';
+      const bLabel = (Array.isArray(b.tracks) && b.tracks[0]?.title) || '';
+      return aLabel.localeCompare(bLabel);
+    });
+  } else {
+    copy.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+  }
+  return copy;
+}
+
+function renderPlaylistCards() {
+  const playlists = sortedPlaylists();
+
+  if (!playlists.length) {
+    playlistsEmpty.classList.remove('hidden');
+    playlistsList.innerHTML = '';
+    return;
+  }
+  playlistsEmpty.classList.add('hidden');
+
+  playlistsList.innerHTML = playlists.map((pl) => {
+    const date = new Date(pl.savedAt).toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+    });
+    const count = Array.isArray(pl.tracks) ? pl.tracks.length : 0;
+    const firstTitle = Array.isArray(pl.tracks) && pl.tracks[0]?.title
+      ? escapeHtml(pl.tracks[0].title)
+      : `${count} track${count !== 1 ? 's' : ''}`;
+    const owner = pl.user_id
+      ? `<span class="text-spotify-subtle text-xs">${escapeHtml(pl.user_id)}</span>` : '';
+    return `
+      <button class="playlist-card w-full text-left bg-spotify-surface hover:bg-spotify-card
+                     rounded-xl px-5 py-4 transition-colors duration-150 flex items-center gap-4"
+              data-id="${pl.id}">
+        <div class="w-12 h-12 rounded-lg bg-spotify-green/10 border border-spotify-green/20
+                    flex items-center justify-center shrink-0">
+          <svg class="w-6 h-6 fill-current text-spotify-green" viewBox="0 0 24 24">
+            <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold truncate">${firstTitle}</p>
+          <div class="flex items-center gap-2 mt-0.5">${owner}
+            <span class="text-spotify-subtle text-xs">${date}</span>
+          </div>
+        </div>
+        <svg class="w-4 h-4 fill-current text-spotify-subtle shrink-0" viewBox="0 0 24 24">
+          <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+        </svg>
+      </button>`;
+  }).join('');
+
+  playlistsList.addEventListener('click', (e) => {
+    const card = e.target.closest('.playlist-card');
+    if (!card) return;
+    const pl = cachedPlaylists.find((p) => p.id === card.dataset.id);
+    if (pl) renderPlaylistDetail(pl);
+  }, { once: true });
+}
+
+playlistsSort.addEventListener('change', renderPlaylistCards);
+
+async function loadSavedPlaylists() {
+  playlistsListView.classList.remove('hidden');
+  playlistDetailView.classList.add('hidden');
+  playlistsList.innerHTML = '';
+  playlistsEmpty.classList.add('hidden');
+  playlistsLoading.classList.remove('hidden');
+
+  let userId = null;
+  try {
+    const s = JSON.parse(localStorage.getItem('vibelist_settings') || '{}');
+    userId = s.displayName || s.email || null;
+  } catch { /* ignore */ }
+
+  cachedPlaylists = await fetchPlaylists(userId);
+  playlistsLoading.classList.add('hidden');
+  renderPlaylistCards();
+}
+
+function renderPlaylistDetail(pl) {
+  playlistsListView.classList.add('hidden');
+  playlistDetailView.classList.remove('hidden');
+
+  const date = new Date(pl.savedAt).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const owner = pl.user_id ? `· <span class="font-medium text-white">${escapeHtml(pl.user_id)}</span>` : '';
+  playlistDetailMeta.innerHTML = `
+    <h2 class="text-2xl font-bold mb-1">${Array.isArray(pl.tracks) ? pl.tracks.length : 0} Tracks</h2>
+    <p class="text-spotify-subtle text-sm">Saved ${date} ${owner}</p>`;
+
+  const tracks = Array.isArray(pl.tracks) ? pl.tracks : [];
+  if (!tracks.length) {
+    playlistDetailTracks.innerHTML = '<p class="text-spotify-subtle text-sm py-4">No tracks in this playlist.</p>';
+    return;
+  }
+
+  playlistDetailTracks.innerHTML = tracks.map((track, index) => {
+    const colour = COVER_COLOURS[index % COVER_COLOURS.length];
+    const title = escapeHtml(track.title || track.song_id || 'Unknown');
+    const artist = escapeHtml(track.artist || '');
+    const initials = artist.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?';
+    return `
+      <article class="flex items-center gap-4 bg-spotify-surface rounded-lg px-4 py-3">
+        <span class="w-8 text-center text-spotify-subtle text-sm shrink-0">${index + 1}</span>
+        <div class="w-10 h-10 rounded shrink-0 flex items-center justify-center
+                    text-xs font-bold text-white"
+             style="background-color:${colour}88;border:1px solid ${colour}44">
+          ${initials}
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold truncate">${title}</p>
+          <p class="text-xs text-spotify-subtle truncate">${artist}</p>
+        </div>
+        ${track.duration ? `<span class="text-spotify-subtle text-xs shrink-0">${escapeHtml(track.duration)}</span>` : ''}
+      </article>`;
+  }).join('');
+}
+
+backToPlaylists.addEventListener('click', () => {
+  playlistDetailView.classList.add('hidden');
+  playlistsListView.classList.remove('hidden');
+  loadSavedPlaylists();
+});
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 

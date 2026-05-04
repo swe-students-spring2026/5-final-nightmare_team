@@ -166,6 +166,21 @@ def get_recommendations(user_id):
         )
 
 
+@app.route("/api/playlists", methods=["GET"])
+def get_playlists():
+    """Retrieve saved playlists from MongoDB, newest first."""
+    user_id = request.args.get("user_id")
+    query = {"user_id": user_id} if user_id else {}
+    docs = list(
+        playlists_col.find(query, {"_id": 1, "user_id": 1, "savedAt": 1, "tracks": 1})
+        .sort("createdAt", -1)
+        .limit(50)
+    )
+    for doc in docs:
+        doc["id"] = str(doc.pop("_id"))
+    return jsonify(docs)
+
+
 @app.route("/api/playlists", methods=["POST"])
 def save_playlist():
     """Save a generated playlist to MongoDB and record save events in ml-app."""
