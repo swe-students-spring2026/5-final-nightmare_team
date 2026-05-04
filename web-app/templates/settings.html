@@ -494,6 +494,11 @@
            items-center gap-2.5 text-sm font-semibold">
   </div>
 
+  <div id="spotify-config"
+       data-connected="{{ 'true' if spotify_connected else 'false' }}"
+       data-msg-type="{{ spotify_connect_message.type if spotify_connect_message else '' }}"
+       data-msg-text="{{ spotify_connect_message.text if spotify_connect_message else '' }}"
+       hidden></div>
   <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
 </body>
 </html>

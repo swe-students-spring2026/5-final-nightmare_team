@@ -10,6 +10,9 @@ services:
       - MONGO_URI=${MONGO_URI}
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
       - ML_APP_URL=http://ml-app:8000
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI}
     volumes:
       - ./web-app/app.py:/app/app.py
       - ./web-app/templates:/app/templates

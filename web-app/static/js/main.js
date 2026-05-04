@@ -14,9 +14,15 @@ const COVER_COLOURS = [
   '#AF2896', '#2D46B9', '#8D67AB', '#006450',
 ];
 
+// ── Server-injected Spotify state ──────────────────────────────────────────
+
+const _spotifyConnected =
+  document.getElementById('spotify-config')?.dataset.connected === 'true';
+
 // ── State ──────────────────────────────────────────────────────────────────
 
 let currentPlaylist = [];
+let currentVibe     = '';
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 
@@ -31,6 +37,7 @@ const resultsSection  = document.getElementById('resultsSection');
 const trackList       = document.getElementById('trackList');
 const trackCount      = document.getElementById('trackCount');
 const saveBtn         = document.getElementById('saveBtn');
+const saveSpotifyBtn  = document.getElementById('saveSpotifyBtn');
 const regenerateBtn   = document.getElementById('regenerateBtn');
 const saveToast       = document.getElementById('saveToast');
 const formError       = document.getElementById('formError');
@@ -105,6 +112,7 @@ form.addEventListener('submit', async (e) => {
   try {
     const tracks = await generatePlaylist(params);
     currentPlaylist = tracks;
+    currentVibe     = vibe;
     renderPlaylist(tracks);
     resetForm();
   } catch (err) {
@@ -235,6 +243,62 @@ saveBtn.addEventListener('click', async () => {
       : 'Playlist saved to MongoDB!',
     result?.ok === false ? 'error' : 'success',
   );
+});
+
+// ── Save to Spotify ────────────────────────────────────────────────────────
+
+saveSpotifyBtn.addEventListener('click', async () => {
+  if (!currentPlaylist.length) return;
+
+  if (!_spotifyConnected) {
+    showToast('Connect Spotify in Settings to save playlists to your library.', 'error');
+    return;
+  }
+
+  saveSpotifyBtn.disabled = true;
+  saveSpotifyBtn.innerHTML = `
+    <svg class="w-4 h-4 animate-spin fill-current" viewBox="0 0 24 24">
+      <path d="M12 2a10 10 0 0 1 10 10h-2a8 8 0 0 0-8-8V2z"/>
+    </svg>
+    Saving…`;
+
+  try {
+    const res  = await fetch('/api/spotify/save-playlist', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        tracks:        currentPlaylist,
+        playlist_name: currentVibe || 'My VibeList Playlist',
+      }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      window.open(data.url, '_blank', 'noopener');
+      showToast(`Saved! ${data.found}/${data.total} tracks added to Spotify.`, 'success');
+    } else {
+      showToast(data.message || 'Failed to save to Spotify.', 'error');
+    }
+  } catch {
+    showToast('Network error — could not reach the server.', 'error');
+  } finally {
+    saveSpotifyBtn.disabled = false;
+    saveSpotifyBtn.innerHTML = `
+      <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+        <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477
+                 10-10S17.523 2 12 2zm4.586 14.424a.622.622 0 0
+                 1-.857.207c-2.348-1.435-5.304-1.76-8.785-.964a.623.623
+                 0 0 1-.277-1.215c3.809-.87 7.076-.496 9.713 1.115a.623.623
+                 0 0 1 .206.857zm1.223-2.722a.78.78 0 0
+                 1-1.072.257c-2.687-1.652-6.785-2.131-9.965-1.166a.78.78
+                 0 1 1-.453-1.492c3.633-1.103 8.147-.569
+                 11.233 1.329a.78.78 0 0 1 .257 1.072zm.105-2.835C14.692
+                 8.95 9.375 8.775 6.297 9.71a.937.937 0 1
+                 1-.543-1.792c3.532-1.072 9.404-.865
+                 13.115 1.338a.937.937 0 0 1-.955 1.611z"/>
+      </svg>
+      Save to Spotify`;
+  }
 });
 
 // ── Regenerate ─────────────────────────────────────────────────────────────

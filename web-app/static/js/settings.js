@@ -11,15 +11,20 @@ const GENRES = [
 ];
 
 const DEFAULT_SETTINGS = {
-  displayName: '',
-  email: '',
+  displayName:         '',
+  email:               '',
   defaultPlaylistSize: 20,
-  preferredGenres: [],
-  defaultEra: 'any',
-  autoSave: false,
-  publicPlaylists: false,
-  spotifyConnected: true,
+  preferredGenres:     [],
+  defaultEra:          'any',
+  autoSave:            false,
+  publicPlaylists:     false,
 };
+
+// ── Server-injected Spotify state ──────────────────────────────────────────
+// Read from the hidden <div id="spotify-config"> rendered by Flask.
+
+const _scfg = document.getElementById('spotify-config').dataset;
+let spotifyIsConnected = _scfg.connected === 'true';
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -98,7 +103,7 @@ function applyToUI(s) {
     cb.checked = (s.preferredGenres || []).includes(cb.value);
   });
 
-  updateSpotifyUI(s.spotifyConnected);
+  updateSpotifyUI(spotifyIsConnected);
   updateAvatar(s.displayName);
 }
 
@@ -130,7 +135,6 @@ function readFromUI() {
     defaultEra:          defaultEraSelect.value,
     autoSave:            autoSaveToggle.checked,
     publicPlaylists:     publicPlaylistsToggle.checked,
-    spotifyConnected:    savedSettings.spotifyConnected,
   };
 }
 
@@ -150,14 +154,14 @@ function renderSaveBar() {
 function updateSpotifyUI(connected) {
   if (connected) {
     spotifyBadge.classList.remove('hidden');
-    spotifyStatus.textContent = 'Syncing your library';
+    spotifyStatus.textContent = 'Connected — playlists can be saved to your Spotify';
     spotifyBtn.textContent    = 'Disconnect';
     spotifyBtn.className      =
       'px-4 py-2 rounded-full text-sm font-semibold border border-spotify-subtle ' +
       'text-spotify-subtle hover:border-red-400 hover:text-red-400 transition-colors';
   } else {
     spotifyBadge.classList.add('hidden');
-    spotifyStatus.textContent = 'Connect to stream and save directly to your library';
+    spotifyStatus.textContent = 'Connect to save playlists directly to your Spotify library';
     spotifyBtn.textContent    = 'Connect Spotify';
     spotifyBtn.className      =
       'px-4 py-2 rounded-full text-sm font-bold bg-spotify-green text-black ' +
@@ -165,10 +169,28 @@ function updateSpotifyUI(connected) {
   }
 }
 
-spotifyBtn.addEventListener('click', () => {
-  savedSettings.spotifyConnected = !savedSettings.spotifyConnected;
-  updateSpotifyUI(savedSettings.spotifyConnected);
-  markDirty();
+spotifyBtn.addEventListener('click', async () => {
+  if (!spotifyIsConnected) {
+    window.location.href = '/spotify/login';
+    return;
+  }
+
+  spotifyBtn.disabled = true;
+  try {
+    const res  = await fetch('/spotify/disconnect', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      spotifyIsConnected = false;
+      updateSpotifyUI(false);
+      showToast('Spotify disconnected.', 'success');
+    } else {
+      showToast('Could not disconnect — try again.', 'error');
+    }
+  } catch {
+    showToast('Network error — could not reach the server.', 'error');
+  } finally {
+    spotifyBtn.disabled = false;
+  }
 });
 
 // ── Avatar ─────────────────────────────────────────────────────────────────
@@ -330,3 +352,7 @@ sidebarBackdrop.addEventListener('click', () => {
 
 initGenreChips();
 loadSettings();
+
+if (_scfg.msgText) {
+  showToast(_scfg.msgText, _scfg.msgType || 'success');
+}

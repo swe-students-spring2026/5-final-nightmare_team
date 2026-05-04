@@ -1,26 +1,36 @@
 """Flask web application with MongoDB Atlas connection."""
 
+import base64
 import os
+import secrets
+import time
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 import requests as http
-from flask import Flask, jsonify, render_template, request
 from pymongo import MongoClient
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key")
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY") or "dev-secret-key"
 
-MONGO_URI = os.environ.get("MONGO_URI", "")
-ML_APP_URL = os.environ.get("ML_APP_URL", "http://ml-app:8000")
+MONGO_URI             = os.environ.get("MONGO_URI", "")
+ML_APP_URL            = os.environ.get("ML_APP_URL", "http://ml-app:8000")
+SPOTIFY_CLIENT_ID     = os.environ.get("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+SPOTIFY_REDIRECT_URI  = os.environ.get(
+    "SPOTIFY_REDIRECT_URI", "http://127.0.0.1:5001/spotify/callback"
+)
 
 client = MongoClient(MONGO_URI)
 db = client["webapp"]
 
-users_col = db["users"]
-songs_col = db["songs"]
-events_col = db["events"]
+users_col     = db["users"]
+songs_col     = db["songs"]
+events_col    = db["events"]
 playlists_col = db["playlists"]
 
 
@@ -41,17 +51,14 @@ AUTH_MESSAGE_MAP = {
 
 
 def normalize_email(value):
-    """Normalize an email address before lookup/storage."""
     return value.strip().lower()
 
 
 def get_auth_message(code):
-    """Translate a short auth status code into user-facing text."""
     return AUTH_MESSAGE_MAP.get(code)
 
 
 def build_session_user(user_doc):
-    """Store only the minimum user data needed in the Flask session."""
     return {
         "id": str(user_doc.get("_id", "")),
         "name": user_doc.get("name") or user_doc.get("email") or "Listener",
@@ -59,17 +66,73 @@ def build_session_user(user_doc):
     }
 
 
+def _spotify_is_connected(user_id_str):
+    """Return True if the user has a Spotify access token stored in MongoDB."""
+    if not user_id_str:
+        return False
+    try:
+        doc = users_col.find_one(
+            {"_id": ObjectId(user_id_str)}, {"spotify_access_token": 1}
+        )
+        return bool(doc and doc.get("spotify_access_token"))
+    except InvalidId:
+        return False
+
+
+def _get_valid_token(user_doc):
+    """Return a valid Spotify access token, refreshing it if expired."""
+    if time.time() < user_doc.get("spotify_token_expires_at", 0):
+        return user_doc["spotify_access_token"]
+
+    refresh_token = user_doc.get("spotify_refresh_token")
+    if not refresh_token:
+        return None
+
+    credentials = base64.b64encode(
+        f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}".encode()
+    ).decode()
+
+    try:
+        resp = http.post(
+            "https://accounts.spotify.com/api/token",
+            headers={"Authorization": f"Basic {credentials}"},
+            data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+            timeout=10,
+        )
+    except http.exceptions.RequestException:
+        return None
+
+    if resp.status_code != 200:
+        return None
+
+    token_data   = resp.json()
+    access_token = token_data["access_token"]
+    expires_at   = int(time.time()) + token_data.get("expires_in", 3600) - 60
+
+    update_fields = {
+        "spotify_access_token":    access_token,
+        "spotify_token_expires_at": expires_at,
+    }
+    if "refresh_token" in token_data:
+        update_fields["spotify_refresh_token"] = token_data["refresh_token"]
+
+    users_col.update_one({"_id": user_doc["_id"]}, {"$set": update_fields})
+    return access_token
+
+
+# ── Pages ──────────────────────────────────────────────────────────────────────
+
 @app.route("/")
 def index():
-    """Render the main page."""
-    return render_template("index.html")
+    user = session.get("auth_user")
+    spotify_connected = _spotify_is_connected(user["id"] if user else "")
+    return render_template("index.html", spotify_connected=spotify_connected)
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    """Render and process the email/password login form."""
     if request.method == "POST":
-        email = normalize_email(request.form.get("email", ""))
+        email    = normalize_email(request.form.get("email", ""))
         password = request.form.get("password", "")
 
         if not email or not password:
@@ -95,9 +158,8 @@ def login():
 
 @app.route("/register", methods=["POST"])
 def register():
-    """Create a basic email/password user in MongoDB."""
-    name = request.form.get("name", "").strip()
-    email = normalize_email(request.form.get("email", ""))
+    name     = request.form.get("name", "").strip()
+    email    = normalize_email(request.form.get("email", ""))
     password = request.form.get("password", "")
 
     if not name or not email or not password:
@@ -109,28 +171,29 @@ def register():
     if users_col.find_one({"email": email}):
         return redirect(url_for("login", error="user_exists", email=email))
 
+    new_id   = ObjectId()
     user_doc = {
-        "name": name,
-        "email": email,
+        "_id":          new_id,
+        "user_id":      str(new_id),
+        "username":     email,
+        "name":         name,
+        "email":        email,
         "passwordHash": generate_password_hash(password),
-        "createdAt": datetime.now(timezone.utc),
+        "createdAt":    datetime.now(timezone.utc),
     }
-    result = users_col.insert_one(user_doc)
-    user_doc["_id"] = result.inserted_id
+    users_col.insert_one(user_doc)
     session["auth_user"] = build_session_user(user_doc)
     return redirect(url_for("index"))
 
 
 @app.route("/logout")
 def logout():
-    """Clear the signed-in user from the session."""
     session.pop("auth_user", None)
     return redirect(url_for("login", success="logged_out"))
 
 
 @app.route("/health")
 def health():
-    """Check MongoDB connectivity and return status."""
     # pylint: disable=invalid-name
     try:
         client.admin.command("ping")
@@ -142,13 +205,226 @@ def health():
 
 @app.route("/settings")
 def settings():
-    """Render the settings page."""
-    return render_template("settings.html")
+    user = session.get("auth_user")
+    spotify_connected = _spotify_is_connected(user["id"] if user else "")
 
+    connect_message = None
+    if request.args.get("spotify_success"):
+        connect_message = {"type": "success", "text": "Spotify connected successfully!"}
+    elif request.args.get("spotify_error") == "access_denied":
+        connect_message = {"type": "error", "text": "Spotify connection was cancelled."}
+    elif request.args.get("spotify_error"):
+        connect_message = {"type": "error", "text": "Spotify connection failed. Please try again."}
+
+    return render_template(
+        "settings.html",
+        spotify_connected=spotify_connected,
+        spotify_connect_message=connect_message,
+    )
+
+
+# ── Spotify OAuth ──────────────────────────────────────────────────────────────
+
+@app.route("/spotify/login")
+def spotify_login():
+    if not session.get("auth_user"):
+        return redirect(url_for("login"))
+    state = secrets.token_urlsafe(16)
+    session["spotify_oauth_state"] = state
+    params = {
+        "client_id":     SPOTIFY_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri":  SPOTIFY_REDIRECT_URI,
+        "scope":         "playlist-modify-public",
+        "state":         state,
+    }
+    return redirect(f"https://accounts.spotify.com/authorize?{urlencode(params)}")
+
+
+@app.route("/spotify/callback")
+def spotify_callback():
+    if request.args.get("error"):
+        return redirect(url_for("settings", spotify_error="access_denied"))
+
+    code  = request.args.get("code", "")
+    state = request.args.get("state", "")
+
+    if not state or state != session.pop("spotify_oauth_state", None):
+        return redirect(url_for("settings", spotify_error="state_mismatch"))
+
+    user = session.get("auth_user")
+    if not user:
+        return redirect(url_for("login"))
+
+    credentials = base64.b64encode(
+        f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}".encode()
+    ).decode()
+
+    try:
+        token_resp = http.post(
+            "https://accounts.spotify.com/api/token",
+            headers={"Authorization": f"Basic {credentials}"},
+            data={
+                "grant_type":   "authorization_code",
+                "code":         code,
+                "redirect_uri": SPOTIFY_REDIRECT_URI,
+            },
+            timeout=10,
+        )
+    except http.exceptions.RequestException:
+        return redirect(url_for("settings", spotify_error="token_exchange_failed"))
+
+    if token_resp.status_code != 200:
+        return redirect(url_for("settings", spotify_error="token_exchange_failed"))
+
+    token_data = token_resp.json()
+    expires_at = int(time.time()) + token_data.get("expires_in", 3600) - 60
+
+    try:
+        users_col.update_one(
+            {"_id": ObjectId(user["id"])},
+            {"$set": {
+                "spotify_access_token":     token_data["access_token"],
+                "spotify_refresh_token":    token_data.get("refresh_token", ""),
+                "spotify_token_expires_at": expires_at,
+            }},
+        )
+    except InvalidId:
+        return redirect(url_for("settings", spotify_error="session_error"))
+
+    return redirect(url_for("settings", spotify_success="1"))
+
+
+@app.route("/spotify/disconnect", methods=["POST"])
+def spotify_disconnect():
+    user = session.get("auth_user")
+    if not user:
+        return jsonify({"ok": False, "message": "Not logged in"}), 401
+    try:
+        users_col.update_one(
+            {"_id": ObjectId(user["id"])},
+            {"$unset": {
+                "spotify_access_token":     "",
+                "spotify_refresh_token":    "",
+                "spotify_token_expires_at": "",
+            }},
+        )
+    except InvalidId:
+        pass
+    return jsonify({"ok": True})
+
+
+@app.route("/api/spotify/status")
+def spotify_status():
+    user = session.get("auth_user")
+    return jsonify({"connected": _spotify_is_connected(user["id"] if user else "")})
+
+
+# ── Spotify playlist save ──────────────────────────────────────────────────────
+
+@app.route("/api/spotify/save-playlist", methods=["POST"])
+def spotify_save_playlist():
+    user = session.get("auth_user")
+    if not user:
+        return jsonify({"ok": False, "message": "Not logged in"}), 401
+
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data.get("tracks"), list) or not data.get("playlist_name"):
+        return jsonify({"ok": False, "message": "Invalid payload"}), 400
+
+    try:
+        user_doc = users_col.find_one({"_id": ObjectId(user["id"])})
+    except InvalidId:
+        return jsonify({"ok": False, "message": "Session error"}), 400
+
+    if not user_doc or not user_doc.get("spotify_access_token"):
+        return jsonify(
+            {"ok": False, "message": "Spotify not connected. Connect in Settings first."}
+        ), 403
+
+    access_token = _get_valid_token(user_doc)
+    if not access_token:
+        return jsonify(
+            {"ok": False, "message": "Spotify token expired — reconnect in Settings."}
+        ), 403
+
+    auth_header = {"Authorization": f"Bearer {access_token}"}
+    json_header = {**auth_header, "Content-Type": "application/json"}
+
+    # Create the playlist (POST /v1/me/playlists works for the authenticated user)
+    playlist_name = data["playlist_name"][:100]
+    try:
+        create_resp = http.post(
+            "https://api.spotify.com/v1/me/playlists",
+            headers=json_header,
+            json={
+                "name":        playlist_name,
+                "public":      True,
+                "description": "Generated by VibeList",
+            },
+            timeout=10,
+        )
+    except http.exceptions.RequestException as exc:
+        print(f"[spotify] create playlist request failed: {exc}")
+        return jsonify({"ok": False, "message": "Could not reach Spotify API."}), 502
+
+    if create_resp.status_code not in (200, 201):
+        print(f"[spotify] create playlist returned {create_resp.status_code}: {create_resp.text}")
+        return jsonify({
+            "ok": False,
+            "message": f"Failed to create playlist ({create_resp.status_code}): {create_resp.text}",
+        }), 502
+
+    playlist_data = create_resp.json()
+    playlist_id   = playlist_data["id"]
+    playlist_url  = playlist_data["external_urls"]["spotify"]
+
+    # Search Spotify for each track's URI
+    uris = []
+    for track in data["tracks"]:
+        title  = track.get("title", "")  if isinstance(track, dict) else ""
+        artist = track.get("artist", "") if isinstance(track, dict) else ""
+        if not title:
+            continue
+        query = f"track:{title} artist:{artist}" if artist else f"track:{title}"
+        try:
+            search_resp = http.get(
+                "https://api.spotify.com/v1/search",
+                headers=auth_header,
+                params={"q": query, "type": "track", "limit": 1},
+                timeout=10,
+            )
+            if search_resp.status_code == 200:
+                items = search_resp.json().get("tracks", {}).get("items", [])
+                if items:
+                    uris.append(items[0]["uri"])
+        except http.exceptions.RequestException:
+            pass  # best-effort: skip unresolvable tracks
+
+    # Add URIs in batches of 100 (Spotify API limit)
+    for i in range(0, len(uris), 100):
+        try:
+            http.post(
+                f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+                headers=json_header,
+                json={"uris": uris[i : i + 100]},
+                timeout=10,
+            )
+        except http.exceptions.RequestException:
+            pass
+
+    return jsonify({
+        "ok":    True,
+        "url":   playlist_url,
+        "found": len(uris),
+        "total": len(data["tracks"]),
+    }), 201
+
+
+# ── ML recommendations proxy ───────────────────────────────────────────────────
 
 @app.route("/api/recommendations/<user_id>")
 def get_recommendations(user_id):
-    """Proxy recommendation request to the ml-app service."""
     k = request.args.get("k", 10)
     try:
         resp = http.get(
@@ -159,24 +435,21 @@ def get_recommendations(user_id):
         return jsonify(resp.json()), resp.status_code
     except http.exceptions.RequestException as exc:
         return (
-            jsonify(
-                {"error": "Recommendation service unavailable", "detail": str(exc)}
-            ),
+            jsonify({"error": "Recommendation service unavailable", "detail": str(exc)}),
             503,
         )
 
 
 @app.route("/api/playlists", methods=["POST"])
 def save_playlist():
-    """Save a generated playlist to MongoDB and record save events in ml-app."""
     data = request.get_json(silent=True)
     if not data or not isinstance(data.get("tracks"), list):
         return jsonify({"ok": False, "message": "Invalid payload"}), 400
 
     doc = {
-        "user_id": data.get("user_id") or None,
-        "tracks": data["tracks"],
-        "savedAt": data.get("savedAt", datetime.now(timezone.utc).isoformat()),
+        "user_id":  data.get("user_id") or None,
+        "tracks":   data["tracks"],
+        "savedAt":  data.get("savedAt", datetime.now(timezone.utc).isoformat()),
         "createdAt": datetime.now(timezone.utc),
     }
     result = playlists_col.insert_one(doc)
@@ -189,15 +462,11 @@ def save_playlist():
                 try:
                     http.post(
                         f"{ML_APP_URL}/events",
-                        json={
-                            "user_id": user_id,
-                            "song_id": song_id,
-                            "event_type": "save",
-                        },
+                        json={"user_id": user_id, "song_id": song_id, "event_type": "save"},
                         timeout=3,
                     )
                 except http.exceptions.RequestException:
-                    pass  # best-effort: don't fail the save if ml-app is unreachable
+                    pass
 
     return jsonify({"ok": True, "id": str(result.inserted_id)}), 201
 
