@@ -6,7 +6,7 @@ ENV PIPENV_VENV_IN_PROJECT=1
 
 RUN pip install --no-cache-dir pipenv
 
-COPY Pipfile Pipfile.lock* ./
+COPY ml-app/Pipfile ml-app/Pipfile.lock* ./
 RUN pipenv install --deploy
 
 COPY ml-app/ ./app/
