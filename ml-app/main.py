@@ -9,9 +9,13 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, status
 from pymongo.errors import DuplicateKeyError
 
+# pylint: disable=no-name-in-module
 from app import database
 from app.models import EVENT_WEIGHTS, MOCK_SONGS
-from app.recommender import ItemBasedRecommender, NotEnoughDataError
+from app.recommender import (
+    ItemBasedRecommender,
+    NotEnoughDataError,
+)
 from app.schemas import (
     EventCreate,
     EventResponse,
@@ -25,6 +29,8 @@ from app.schemas import (
     UserCreate,
     UserResponse,
 )
+
+# pylint: enable=no-name-in-module
 
 recommender = ItemBasedRecommender()
 

@@ -186,7 +186,9 @@ def get_playlists():
     user_id = request.args.get("user_id")
     query = {"user_id": user_id} if user_id else {}
     docs = list(
-        playlists_col.find(query, {"_id": 1, "user_id": 1, "name": 1, "savedAt": 1, "tracks": 1})
+        playlists_col.find(
+            query, {"_id": 1, "user_id": 1, "name": 1, "savedAt": 1, "tracks": 1}
+        )
         .sort("createdAt", -1)
         .limit(50)
     )

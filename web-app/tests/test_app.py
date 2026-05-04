@@ -4,6 +4,8 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
+from bson import ObjectId
 from werkzeug.security import generate_password_hash
 
 from app import app as flask_app
@@ -203,8 +205,6 @@ def test_save_playlist_fires_ml_events(http_client):
 
 def test_save_playlist_ml_unavailable_still_saves(http_client):
     """Test POST /api/playlists still returns 201 when ml-app is unreachable."""
-    import requests
-
     playlists_col.insert_one = MagicMock(return_value=MagicMock(inserted_id="pl-2"))
     payload = {"user_id": "user-123", "tracks": [{"song_id": "s1"}]}
     with patch("app.http.post", side_effect=requests.exceptions.ConnectionError):
@@ -221,8 +221,6 @@ def test_save_playlist_ml_unavailable_still_saves(http_client):
 
 def test_get_playlists_no_filter(http_client):
     """Test GET /api/playlists returns all playlists when no user_id given."""
-    from bson import ObjectId
-
     oid = ObjectId()
     playlists_col.find = MagicMock(
         return_value=MagicMock(
@@ -245,9 +243,7 @@ def test_get_playlists_no_filter(http_client):
 def test_get_playlists_filters_by_user(http_client):
     """Test GET /api/playlists?user_id=X passes user filter to MongoDB."""
     playlists_col.find = MagicMock(
-        return_value=MagicMock(
-            sort=lambda *_: MagicMock(limit=lambda *_: [])
-        )
+        return_value=MagicMock(sort=lambda *_: MagicMock(limit=lambda *_: []))
     )
 
     res = http_client.get("/api/playlists?user_id=user-123")
@@ -279,8 +275,6 @@ def test_get_recommendations_proxies_ml_app(http_client):
 
 def test_get_recommendations_ml_unavailable(http_client):
     """Test GET /api/recommendations returns 503 when ml-app is unreachable."""
-    import requests
-
     with patch("app.http.get", side_effect=requests.exceptions.ConnectionError):
         res = http_client.get("/api/recommendations/user-123")
 
