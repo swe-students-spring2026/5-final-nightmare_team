@@ -175,10 +175,16 @@
     <div class="max-w-3xl mx-auto px-6 py-10">
 
       <!-- Page header -->
-      <header class="mb-8">
+      <header class="mb-4">
         <h1 class="text-4xl font-bold">Settings</h1>
         <p class="text-spotify-subtle mt-1 text-sm">Manage your profile, integrations, and generator preferences.</p>
       </header>
+
+      <!-- Signed-in user + logout -->
+      <div id="userHeader" class="flex items-center justify-between mb-6">
+        <p class="text-sm text-spotify-subtle">Signed in as <span id="currentUsername" class="text-white font-semibold"></span></p>
+        <button id="logoutBtn" type="button" class="text-xs text-spotify-subtle hover:text-white transition-colors">Sign out</button>
+      </div>
 
       <form id="settingsForm" novalidate class="space-y-6">
 

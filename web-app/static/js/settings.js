@@ -3,6 +3,7 @@
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = 'vibelist_settings';
+const API_BASE    = '/api';
 
 const GENRES = [
   'Pop', 'Rock', 'Hip-Hop', 'R&B', 'Electronic',
@@ -24,7 +25,8 @@ const DEFAULT_SETTINGS = {
 // ── State ──────────────────────────────────────────────────────────────────
 
 let savedSettings = { ...DEFAULT_SETTINGS };
-let isDirty = false;
+let isDirty       = false;
+let pendingAvatar = null; // base64 data-url queued until next save
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 
@@ -54,6 +56,8 @@ const healthLabel           = document.getElementById('healthLabel');
 const menuToggle            = document.getElementById('menuToggle');
 const sidebar               = document.getElementById('sidebar');
 const sidebarBackdrop       = document.getElementById('sidebarBackdrop');
+const currentUsernameEl     = document.getElementById('currentUsername');
+const logoutBtn             = document.getElementById('logoutBtn');
 
 // ── Genre chips ────────────────────────────────────────────────────────────
 
@@ -74,16 +78,60 @@ function initGenreChips() {
 
 // ── Load settings ──────────────────────────────────────────────────────────
 
-function loadSettings() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) savedSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    savedSettings = { ...DEFAULT_SETTINGS };
+async function loadSettingsFromAPI() {
+  const res = await fetch(`${API_BASE}/settings`);
+
+  if (res.status === 401) {
+    window.location.href = '/login';
+    return;
   }
+
+  if (!res.ok) throw new Error('Failed to load settings');
+
+  const { data } = await res.json();
+
+  if (currentUsernameEl && data.username) {
+    currentUsernameEl.textContent = data.username;
+  }
+
+  const mapped = {
+    displayName:         data.display_name || '',
+    email:               data.email || '',
+    defaultPlaylistSize: data.settings?.default_playlist_size ?? 20,
+    preferredGenres:     data.settings?.preferred_genres || [],
+    defaultEra:          data.settings?.default_era || 'any',
+    autoSave:            data.settings?.auto_save ?? false,
+    publicPlaylists:     data.settings?.public_playlists ?? false,
+    spotifyConnected:    data.settings?.spotify_connected ?? false,
+  };
+
+  savedSettings = mapped;
+
+  if (data.avatar) {
+    avatarPlaceholder.style.backgroundImage    = `url(${data.avatar})`;
+    avatarPlaceholder.style.backgroundSize     = 'cover';
+    avatarPlaceholder.style.backgroundPosition = 'center';
+    avatarInitials.style.display = 'none';
+  }
+
   applyToUI(savedSettings);
   isDirty = false;
   renderSaveBar();
+}
+
+function loadSettings() {
+  loadSettingsFromAPI().catch(() => {
+    // network error: fall back to localStorage
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) savedSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    } catch {
+      savedSettings = { ...DEFAULT_SETTINGS };
+    }
+    applyToUI(savedSettings);
+    isDirty = false;
+    renderSaveBar();
+  });
 }
 
 function applyToUI(s) {
@@ -104,17 +152,59 @@ function applyToUI(s) {
 
 // ── Save settings ──────────────────────────────────────────────────────────
 
-function saveSettings() {
+async function saveSettings() {
   const current = readFromUI();
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
-    savedSettings = current;
-    isDirty = false;
-    renderSaveBar();
-    showToast('Settings Saved!', 'success');
-  } catch {
-    showToast('Could not save — storage may be full.', 'error');
+  saveBtn.disabled = true;
+
+  // Upload avatar first if one was selected since last save
+  if (pendingAvatar) {
+    const avatarRes = await fetch(`${API_BASE}/settings/avatar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ avatar: pendingAvatar }),
+    });
+    if (avatarRes.status === 401) { window.location.href = '/login'; return; }
+    if (!avatarRes.ok) {
+      showToast('Avatar upload failed.', 'error');
+      saveBtn.disabled = false;
+      return;
+    }
+    pendingAvatar = null;
   }
+
+  const res = await fetch(`${API_BASE}/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      display_name: current.displayName,
+      email:        current.email,
+      settings: {
+        default_playlist_size: current.defaultPlaylistSize,
+        preferred_genres:      current.preferredGenres,
+        default_era:           current.defaultEra,
+        auto_save:             current.autoSave,
+        public_playlists:      current.publicPlaylists,
+      },
+    }),
+  });
+
+  saveBtn.disabled = false;
+
+  if (res.status === 401) { window.location.href = '/login'; return; }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    showToast(err.error || 'Save failed. Please try again.', 'error');
+    return;
+  }
+
+  // Keep localStorage in sync as an offline cache
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(current)); } catch { /* ignore */ }
+
+  savedSettings = current;
+  isDirty = false;
+  renderSaveBar();
+  showToast('Settings Saved!', 'success');
 }
 
 function readFromUI() {
@@ -211,6 +301,7 @@ photoInput.addEventListener('change', (e) => {
 
   const reader = new FileReader();
   reader.onload = (ev) => {
+    pendingAvatar = ev.target.result; // stored for upload on save
     avatarPlaceholder.style.backgroundImage    = `url(${ev.target.result})`;
     avatarPlaceholder.style.backgroundSize     = 'cover';
     avatarPlaceholder.style.backgroundPosition = 'center';
@@ -268,30 +359,45 @@ defaultEraSelect.addEventListener('change', markDirty);
 autoSaveToggle.addEventListener('change', markDirty);
 publicPlaylistsToggle.addEventListener('change', markDirty);
 
-settingsForm.addEventListener('submit', (e) => {
+settingsForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  saveSettings();
+  await saveSettings();
 });
 
-saveBtn.addEventListener('click', saveSettings);
+saveBtn.addEventListener('click', () => saveSettings());
 
 discardBtn.addEventListener('click', () => {
+  pendingAvatar = null;
   applyToUI(savedSettings);
   isDirty = false;
   renderSaveBar();
 });
 
-// ── Danger zone ────────────────────────────────────────────────────────────
+// ── Logout ─────────────────────────────────────────────────────────────────
 
-clearHistoryBtn.addEventListener('click', () => {
-  if (!confirm('Clear all generation history? This cannot be undone.')) return;
-  showToast('Generation history cleared.', 'success');
+logoutBtn.addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/login';
 });
 
-deleteAccountBtn.addEventListener('click', () => {
+// ── Danger zone ────────────────────────────────────────────────────────────
+
+clearHistoryBtn.addEventListener('click', async () => {
+  if (!confirm('Clear all generation history? This cannot be undone.')) return;
+  const res = await fetch(`${API_BASE}/settings/history`, { method: 'DELETE' });
+  if (res.status === 401) { window.location.href = '/login'; return; }
+  showToast(res.ok ? 'Generation history cleared.' : 'Failed to clear history.', res.ok ? 'success' : 'error');
+});
+
+deleteAccountBtn.addEventListener('click', async () => {
   if (!confirm('Delete your account? All data will be permanently removed.')) return;
   if (!confirm('This is irreversible. Click OK to confirm account deletion.')) return;
-  showToast('Account deletion requested.', 'error');
+  const res = await fetch(`${API_BASE}/settings/account`, { method: 'DELETE' });
+  if (res.ok) {
+    window.location.href = '/login';
+  } else {
+    showToast('Account deletion failed. Please try again.', 'error');
+  }
 });
 
 // ── DB Health ──────────────────────────────────────────────────────────────

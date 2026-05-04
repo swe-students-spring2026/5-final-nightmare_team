@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Account — VibeList</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            spotify: {
+              green:   '#1DB954',
+              black:   '#121212',
+              surface: '#181818',
+              card:    '#282828',
+              subtle:  '#B3B3B3',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-spotify-black min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-sm">
+    <!-- Logo -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center gap-2 mb-2">
+        <div class="w-8 h-8 bg-spotify-green rounded-full flex items-center justify-center">
+          <svg viewBox="0 0 24 24" class="w-5 h-5 fill-black">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+          </svg>
+        </div>
+        <span class="text-white text-xl font-bold tracking-tight">VibeList</span>
+      </div>
+      <h1 class="text-white text-2xl font-bold mt-4">Create your account</h1>
+    </div>
+
+    <!-- Card -->
+    <div class="bg-spotify-card rounded-2xl p-8">
+      <div id="errorMsg" class="hidden mb-4 px-4 py-3 bg-red-900/40 border border-red-700 rounded-lg text-red-300 text-sm"></div>
+
+      <form id="registerForm" novalidate>
+        <div class="mb-4">
+          <label for="username" class="block text-spotify-subtle text-xs font-semibold uppercase tracking-wider mb-2">Username <span class="text-red-400">*</span></label>
+          <input
+            id="username"
+            type="text"
+            autocomplete="username"
+            required
+            class="w-full bg-spotify-surface border border-white/10 rounded-lg px-4 py-3 text-white placeholder-spotify-subtle text-sm focus:outline-none focus:border-spotify-green transition-colors"
+            placeholder="choose a username"
+          />
+        </div>
+
+        <div class="mb-4">
+          <label for="password" class="block text-spotify-subtle text-xs font-semibold uppercase tracking-wider mb-2">Password <span class="text-red-400">*</span></label>
+          <input
+            id="password"
+            type="password"
+            autocomplete="new-password"
+            required
+            class="w-full bg-spotify-surface border border-white/10 rounded-lg px-4 py-3 text-white placeholder-spotify-subtle text-sm focus:outline-none focus:border-spotify-green transition-colors"
+            placeholder="at least 8 characters"
+          />
+        </div>
+
+        <div class="mb-4">
+          <label for="displayName" class="block text-spotify-subtle text-xs font-semibold uppercase tracking-wider mb-2">Display Name <span class="text-spotify-subtle font-normal normal-case">(optional)</span></label>
+          <input
+            id="displayName"
+            type="text"
+            autocomplete="name"
+            class="w-full bg-spotify-surface border border-white/10 rounded-lg px-4 py-3 text-white placeholder-spotify-subtle text-sm focus:outline-none focus:border-spotify-green transition-colors"
+            placeholder="how you'll appear"
+          />
+        </div>
+
+        <div class="mb-6">
+          <label for="email" class="block text-spotify-subtle text-xs font-semibold uppercase tracking-wider mb-2">Email <span class="text-spotify-subtle font-normal normal-case">(optional)</span></label>
+          <input
+            id="email"
+            type="email"
+            autocomplete="email"
+            class="w-full bg-spotify-surface border border-white/10 rounded-lg px-4 py-3 text-white placeholder-spotify-subtle text-sm focus:outline-none focus:border-spotify-green transition-colors"
+            placeholder="you@example.com"
+          />
+        </div>
+
+        <button
+          type="submit"
+          id="submitBtn"
+          class="w-full bg-spotify-green hover:brightness-110 text-black font-bold py-3 rounded-full transition-all text-sm"
+        >
+          Create Account
+        </button>
+      </form>
+
+      <p class="text-center text-spotify-subtle text-sm mt-6">
+        Already have an account?
+        <a href="/login" class="text-white hover:text-spotify-green transition-colors font-semibold">Sign in</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('registerForm');
+    const errorMsg = document.getElementById('errorMsg');
+    const submitBtn = document.getElementById('submitBtn');
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.remove('hidden');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.classList.add('hidden');
+
+      const password = document.getElementById('password').value;
+      if (password.length < 8) {
+        showError('Password must be at least 8 characters.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating account…';
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username:     document.getElementById('username').value.trim(),
+            password,
+            display_name: document.getElementById('displayName').value.trim(),
+            email:        document.getElementById('email').value.trim(),
+          }),
+        });
+
+        if (res.status === 201) {
+          window.location.href = '/settings';
+        } else {
+          const data = await res.json();
+          showError(data.error || 'Registration failed. Please try again.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create Account';
+        }
+      } catch {
+        showError('Network error. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Account';
+      }
+    });
+  </script>
+</body>
+</html>
