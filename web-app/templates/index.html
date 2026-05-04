@@ -324,6 +324,34 @@
     </div>
   </main>
 
+  <!-- ── Name Playlist Modal ──────────────────────────────────────────────── -->
+  <div id="namePlaylistModal"
+       class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+    <div class="bg-spotify-surface border border-spotify-card rounded-2xl p-6 w-full max-w-sm mx-4 shadow-xl">
+      <h2 class="text-xl font-bold mb-1">Name your playlist</h2>
+      <p class="text-spotify-subtle text-sm mb-4">Give it a name before saving to MongoDB.</p>
+      <input id="playlistNameInput"
+             type="text"
+             maxlength="80"
+             placeholder="My awesome playlist"
+             class="w-full bg-spotify-card border border-transparent focus:border-spotify-green
+                    focus:outline-none rounded-lg px-4 py-3 text-sm text-white
+                    placeholder-spotify-subtle transition-colors mb-4" />
+      <div class="flex gap-3">
+        <button id="cancelNameBtn"
+                class="flex-1 border border-spotify-card hover:border-white text-white
+                       font-semibold py-2.5 rounded-full transition-colors text-sm">
+          Cancel
+        </button>
+        <button id="confirmSaveBtn"
+                class="flex-1 bg-spotify-green hover:bg-green-400 text-black
+                       font-bold py-2.5 rounded-full transition-colors text-sm">
+          Save
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ES6 module entry point -->
   <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>

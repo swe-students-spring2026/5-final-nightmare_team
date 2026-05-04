@@ -33,6 +33,10 @@ const trackCount      = document.getElementById('trackCount');
 const saveBtn         = document.getElementById('saveBtn');
 const regenerateBtn   = document.getElementById('regenerateBtn');
 const saveToast       = document.getElementById('saveToast');
+const namePlaylistModal = document.getElementById('namePlaylistModal');
+const playlistNameInput = document.getElementById('playlistNameInput');
+const cancelNameBtn     = document.getElementById('cancelNameBtn');
+const confirmSaveBtn    = document.getElementById('confirmSaveBtn');
 const formError       = document.getElementById('formError');
 const healthBtn       = document.getElementById('healthBtn');
 const healthDot       = document.getElementById('healthDot');
@@ -218,8 +222,43 @@ function onTrackAction(e) {
 
 // ── Save to MongoDB ────────────────────────────────────────────────────────
 
-saveBtn.addEventListener('click', async () => {
+const SAVE_BTN_HTML = `
+  <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+    <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0
+             2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3
+             3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+  </svg>
+  Save to MongoDB`;
+
+saveBtn.addEventListener('click', () => {
   if (!currentPlaylist.length) return;
+  playlistNameInput.value = '';
+  namePlaylistModal.classList.remove('hidden');
+  playlistNameInput.focus();
+});
+
+cancelNameBtn.addEventListener('click', () => {
+  namePlaylistModal.classList.add('hidden');
+});
+
+namePlaylistModal.addEventListener('click', (e) => {
+  if (e.target === namePlaylistModal) namePlaylistModal.classList.add('hidden');
+});
+
+playlistNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') confirmSaveBtn.click();
+  if (e.key === 'Escape') cancelNameBtn.click();
+});
+
+confirmSaveBtn.addEventListener('click', async () => {
+  const name = playlistNameInput.value.trim();
+  if (!name) {
+    playlistNameInput.classList.add('border-red-500');
+    playlistNameInput.focus();
+    return;
+  }
+  playlistNameInput.classList.remove('border-red-500');
+  namePlaylistModal.classList.add('hidden');
 
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving…';
@@ -230,16 +269,10 @@ saveBtn.addEventListener('click', async () => {
     userId = s.displayName || s.email || null;
   } catch { /* ignore parse errors */ }
 
-  const result = await savePlaylist(currentPlaylist, userId);
+  const result = await savePlaylist(currentPlaylist, userId, name);
 
   saveBtn.disabled = false;
-  saveBtn.innerHTML = `
-    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
-      <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0
-               2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3
-               3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
-    </svg>
-    Save to MongoDB`;
+  saveBtn.innerHTML = SAVE_BTN_HTML;
 
   showToast(
     result?.ok === false
@@ -376,8 +409,8 @@ function sortedPlaylists() {
     copy.sort((a, b) => new Date(a.savedAt) - new Date(b.savedAt));
   } else if (order === 'alpha') {
     copy.sort((a, b) => {
-      const aLabel = (Array.isArray(a.tracks) && a.tracks[0]?.title) || '';
-      const bLabel = (Array.isArray(b.tracks) && b.tracks[0]?.title) || '';
+      const aLabel = a.name || (Array.isArray(a.tracks) && a.tracks[0]?.title) || '';
+      const bLabel = b.name || (Array.isArray(b.tracks) && b.tracks[0]?.title) || '';
       return aLabel.localeCompare(bLabel);
     });
   } else {
@@ -401,11 +434,12 @@ function renderPlaylistCards() {
       year: 'numeric', month: 'short', day: 'numeric',
     });
     const count = Array.isArray(pl.tracks) ? pl.tracks.length : 0;
-    const firstTitle = Array.isArray(pl.tracks) && pl.tracks[0]?.title
-      ? escapeHtml(pl.tracks[0].title)
-      : `${count} track${count !== 1 ? 's' : ''}`;
-    const owner = pl.user_id
-      ? `<span class="text-spotify-subtle text-xs">${escapeHtml(pl.user_id)}</span>` : '';
+    const displayName = pl.name
+      ? escapeHtml(pl.name)
+      : (Array.isArray(pl.tracks) && pl.tracks[0]?.title
+        ? escapeHtml(pl.tracks[0].title)
+        : `${count} track${count !== 1 ? 's' : ''}`);
+    const subtitle = `${count} track${count !== 1 ? 's' : ''} · ${date}`;
     return `
       <button class="playlist-card w-full text-left bg-spotify-surface hover:bg-spotify-card
                      rounded-xl px-5 py-4 transition-colors duration-150 flex items-center gap-4"
@@ -417,10 +451,8 @@ function renderPlaylistCards() {
           </svg>
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-semibold truncate">${firstTitle}</p>
-          <div class="flex items-center gap-2 mt-0.5">${owner}
-            <span class="text-spotify-subtle text-xs">${date}</span>
-          </div>
+          <p class="text-sm font-semibold truncate">${displayName}</p>
+          <span class="text-spotify-subtle text-xs">${subtitle}</span>
         </div>
         <svg class="w-4 h-4 fill-current text-spotify-subtle shrink-0" viewBox="0 0 24 24">
           <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
@@ -463,10 +495,12 @@ function renderPlaylistDetail(pl) {
   const date = new Date(pl.savedAt).toLocaleDateString(undefined, {
     year: 'numeric', month: 'long', day: 'numeric',
   });
-  const owner = pl.user_id ? `· <span class="font-medium text-white">${escapeHtml(pl.user_id)}</span>` : '';
+  const trackCount2 = Array.isArray(pl.tracks) ? pl.tracks.length : 0;
+  const owner = pl.user_id ? ` · <span class="font-medium text-white">${escapeHtml(pl.user_id)}</span>` : '';
+  const heading = pl.name ? escapeHtml(pl.name) : `${trackCount2} Track${trackCount2 !== 1 ? 's' : ''}`;
   playlistDetailMeta.innerHTML = `
-    <h2 class="text-2xl font-bold mb-1">${Array.isArray(pl.tracks) ? pl.tracks.length : 0} Tracks</h2>
-    <p class="text-spotify-subtle text-sm">Saved ${date} ${owner}</p>`;
+    <h2 class="text-2xl font-bold mb-1">${heading}</h2>
+    <p class="text-spotify-subtle text-sm">${trackCount2} track${trackCount2 !== 1 ? 's' : ''} · Saved ${date}${owner}</p>`;
 
   const tracks = Array.isArray(pl.tracks) ? pl.tracks : [];
   if (!tracks.length) {

@@ -97,13 +97,14 @@ export function fetchPlaylists(userId) {
 /**
  * @param {Array} tracks - The playlist to persist.
  * @param {string|null} userId - The display name / user identifier from settings.
+ * @param {string|null} name - User-supplied playlist name.
  * @returns {Promise<{ok: boolean, message: string}>}
  */
-export function savePlaylist(tracks, userId) {
+export function savePlaylist(tracks, userId, name) {
   return fetch('/api/playlists', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ tracks, savedAt: new Date().toISOString(), user_id: userId || null }),
+    body:    JSON.stringify({ tracks, savedAt: new Date().toISOString(), user_id: userId || null, name: name || null }),
   })
     .then((res) => res.json())
     .catch(() => ({ ok: false, message: 'Network error — could not reach the server.' }));

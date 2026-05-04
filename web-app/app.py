@@ -3,9 +3,8 @@
 import os
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 import requests as http
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from pymongo import MongoClient
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -22,6 +21,19 @@ users_col = db["users"]
 songs_col = db["songs"]
 events_col = db["events"]
 playlists_col = db["playlists"]
+
+
+def _init_indexes() -> None:
+    """Ensure correct indexes; drop legacy ones that conflict."""
+    for index_name in ("username_1", "user_id_1"):
+        try:
+            users_col.drop_index(index_name)
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass  # index doesn't exist — nothing to do
+    users_col.create_index([("email", 1)], unique=True, sparse=True)
+
+
+_init_indexes()
 
 
 AUTH_MESSAGE_MAP = {
@@ -52,8 +64,10 @@ def get_auth_message(code):
 
 def build_session_user(user_doc):
     """Store only the minimum user data needed in the Flask session."""
+    object_id = str(user_doc.get("_id", ""))
     return {
-        "id": str(user_doc.get("_id", "")),
+        "id": object_id,
+        "user_id": object_id,
         "name": user_doc.get("name") or user_doc.get("email") or "Listener",
         "email": user_doc.get("email", ""),
     }
@@ -62,7 +76,7 @@ def build_session_user(user_doc):
 @app.route("/")
 def index():
     """Render the main page."""
-    return render_template("index.html")
+    return render_template("index.html", current_user=session.get("auth_user", {}))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -172,7 +186,7 @@ def get_playlists():
     user_id = request.args.get("user_id")
     query = {"user_id": user_id} if user_id else {}
     docs = list(
-        playlists_col.find(query, {"_id": 1, "user_id": 1, "savedAt": 1, "tracks": 1})
+        playlists_col.find(query, {"_id": 1, "user_id": 1, "name": 1, "savedAt": 1, "tracks": 1})
         .sort("createdAt", -1)
         .limit(50)
     )
@@ -190,6 +204,7 @@ def save_playlist():
 
     doc = {
         "user_id": data.get("user_id") or None,
+        "name": data.get("name") or None,
         "tracks": data["tracks"],
         "savedAt": data.get("savedAt", datetime.now(timezone.utc).isoformat()),
         "createdAt": datetime.now(timezone.utc),

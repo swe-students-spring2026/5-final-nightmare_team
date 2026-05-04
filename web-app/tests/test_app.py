@@ -1,14 +1,14 @@
 """Tests for the Flask web application."""
 
 # pylint: disable=redefined-outer-name
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from werkzeug.security import generate_password_hash
 
 from app import app as flask_app
 from app import client as mongo_client
-from app import users_col
+from app import playlists_col, users_col
 
 
 @pytest.fixture
@@ -174,3 +174,167 @@ def test_save_playlist_invalid_tracks_type(http_client):
     assert res.status_code == 400
     data = res.get_json()
     assert data["ok"] is False
+
+
+def test_save_playlist_no_body(http_client):
+    """Test POST /api/playlists with no JSON body returns 400."""
+    res = http_client.post("/api/playlists", content_type="application/json", data="")
+    assert res.status_code == 400
+    assert res.get_json()["ok"] is False
+
+
+def test_save_playlist_fires_ml_events(http_client):
+    """Test POST /api/playlists with user_id fires best-effort events to ml-app."""
+    playlists_col.insert_one = MagicMock(return_value=MagicMock(inserted_id="pl-1"))
+    payload = {
+        "user_id": "user-123",
+        "tracks": [{"song_id": "s1"}, {"song_id": "s2"}],
+    }
+    with patch("app.http.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        res = http_client.post("/api/playlists", json=payload)
+
+    assert res.status_code == 201
+    assert mock_post.call_count == 2
+    call_bodies = [c.kwargs["json"] for c in mock_post.call_args_list]
+    assert {"user_id": "user-123", "song_id": "s1", "event_type": "save"} in call_bodies
+    assert {"user_id": "user-123", "song_id": "s2", "event_type": "save"} in call_bodies
+
+
+def test_save_playlist_ml_unavailable_still_saves(http_client):
+    """Test POST /api/playlists still returns 201 when ml-app is unreachable."""
+    import requests
+
+    playlists_col.insert_one = MagicMock(return_value=MagicMock(inserted_id="pl-2"))
+    payload = {"user_id": "user-123", "tracks": [{"song_id": "s1"}]}
+    with patch("app.http.post", side_effect=requests.exceptions.ConnectionError):
+        res = http_client.post("/api/playlists", json=payload)
+
+    assert res.status_code == 201
+    assert res.get_json()["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# GET /api/playlists
+# ---------------------------------------------------------------------------
+
+
+def test_get_playlists_no_filter(http_client):
+    """Test GET /api/playlists returns all playlists when no user_id given."""
+    from bson import ObjectId
+
+    oid = ObjectId()
+    playlists_col.find = MagicMock(
+        return_value=MagicMock(
+            sort=lambda *_: MagicMock(
+                limit=lambda *_: [
+                    {"_id": oid, "user_id": "u1", "savedAt": "2024-01-01", "tracks": []}
+                ]
+            )
+        )
+    )
+
+    res = http_client.get("/api/playlists")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert len(data) == 1
+    assert data[0]["id"] == str(oid)
+    assert "_id" not in data[0]
+
+
+def test_get_playlists_filters_by_user(http_client):
+    """Test GET /api/playlists?user_id=X passes user filter to MongoDB."""
+    playlists_col.find = MagicMock(
+        return_value=MagicMock(
+            sort=lambda *_: MagicMock(limit=lambda *_: [])
+        )
+    )
+
+    res = http_client.get("/api/playlists?user_id=user-123")
+    assert res.status_code == 200
+    query_arg = playlists_col.find.call_args[0][0]
+    assert query_arg == {"user_id": "user-123"}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/recommendations/<user_id>
+# ---------------------------------------------------------------------------
+
+
+def test_get_recommendations_proxies_ml_app(http_client):
+    """Test GET /api/recommendations proxies to ml-app and returns its response."""
+    mock_resp = MagicMock(status_code=200)
+    mock_resp.json.return_value = [{"song_id": "s1", "title": "Test Song"}]
+
+    with patch("app.http.get", return_value=mock_resp) as mock_get:
+        res = http_client.get("/api/recommendations/user-123?k=5")
+
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data[0]["song_id"] == "s1"
+    mock_get.assert_called_once()
+    call_url = mock_get.call_args[0][0]
+    assert "user-123" in call_url
+
+
+def test_get_recommendations_ml_unavailable(http_client):
+    """Test GET /api/recommendations returns 503 when ml-app is unreachable."""
+    import requests
+
+    with patch("app.http.get", side_effect=requests.exceptions.ConnectionError):
+        res = http_client.get("/api/recommendations/user-123")
+
+    assert res.status_code == 503
+    assert "error" in res.get_json()
+
+
+# ---------------------------------------------------------------------------
+# GET /settings
+# ---------------------------------------------------------------------------
+
+
+def test_settings_page(http_client):
+    """Test that the settings route returns 200."""
+    res = http_client.get("/settings")
+    assert res.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Register validation edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_register_missing_fields(http_client):
+    """Test POST /register with missing fields redirects with error."""
+    res = http_client.post("/register", data={"name": "", "email": "", "password": ""})
+    assert res.status_code == 302
+    assert "/login?error=missing_register_fields" in res.headers["Location"]
+
+
+def test_register_weak_password(http_client):
+    """Test POST /register with password shorter than 8 chars redirects with error."""
+    res = http_client.post(
+        "/register",
+        data={"name": "Alice", "email": "alice@example.com", "password": "short"},
+    )
+    assert res.status_code == 302
+    assert "/login?error=weak_password" in res.headers["Location"]
+
+
+# ---------------------------------------------------------------------------
+# Login validation edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_login_missing_fields(http_client):
+    """Test POST /login with empty email/password redirects with error."""
+    res = http_client.post("/login", data={"email": "", "password": ""})
+    assert res.status_code == 302
+    assert "/login?error=missing_login_fields" in res.headers["Location"]
+
+
+def test_login_missing_password(http_client):
+    """Test POST /login with email but no password redirects with error."""
+    res = http_client.post("/login", data={"email": "user@example.com", "password": ""})
+    assert res.status_code == 302
+    assert "/login?error=missing_login_fields" in res.headers["Location"]
