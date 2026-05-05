@@ -3,6 +3,7 @@
 
 services:
   web:
+    image: ${DOCKERHUB_USERNAME}/vibelist:web-app
     build: ./web-app
     ports:
       - "5050:5000"
@@ -18,6 +19,7 @@ services:
       - app-network
 
   ml-app:
+    image: ${DOCKERHUB_USERNAME}/vibelist:ml-app
     build:
       context: .
       dockerfile: ml-app/Dockerfile

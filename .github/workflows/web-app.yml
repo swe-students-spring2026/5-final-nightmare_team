@@ -74,8 +74,8 @@ jobs:
           context: ./web-app
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/web-app:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/web-app:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/vibelist:web-app
+            ${{ secrets.DOCKERHUB_USERNAME }}/vibelist:web-app-${{ github.sha }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -89,5 +89,5 @@ jobs:
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/web-app:latest
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/vibelist:web-app
             docker compose -f /app/docker-compose.yml up -d --no-deps web

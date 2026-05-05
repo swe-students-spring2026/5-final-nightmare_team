@@ -79,8 +79,8 @@ jobs:
           file: ml-app/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/ml-app:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/ml-app:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/vibelist:ml-app
+            ${{ secrets.DOCKERHUB_USERNAME }}/vibelist:ml-app-${{ github.sha }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -94,5 +94,5 @@ jobs:
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/ml-app:latest
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/vibelist:ml-app
             docker compose -f /app/docker-compose.yml up -d --no-deps ml-app
