@@ -21,7 +21,8 @@ def get_db() -> Database:
 def init_db() -> None:
     """Create indexes on the recommender collections."""
     db = get_db()
-    db["users"].create_index([("user_id", ASCENDING)], unique=True)
+    # sparse=True so web-app auth documents (which have no user_id) are excluded from the index
+    db["users"].create_index([("user_id", ASCENDING)], unique=True, sparse=True)
     db["songs"].create_index([("song_id", ASCENDING)], unique=True)
     db["events"].create_index([("user_id", ASCENDING), ("song_id", ASCENDING)])
 

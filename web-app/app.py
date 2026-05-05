@@ -17,20 +17,20 @@ from werkzeug.security import check_password_hash, generate_password_hash
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY") or "dev-secret-key"
 
-MONGO_URI             = os.environ.get("MONGO_URI", "")
-ML_APP_URL            = os.environ.get("ML_APP_URL", "http://ml-app:8000")
-SPOTIFY_CLIENT_ID     = os.environ.get("SPOTIFY_CLIENT_ID", "")
+MONGO_URI = os.environ.get("MONGO_URI", "")
+ML_APP_URL = os.environ.get("ML_APP_URL", "http://ml-app:8000")
+SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
-SPOTIFY_REDIRECT_URI  = os.environ.get(
-    "SPOTIFY_REDIRECT_URI", "http://127.0.0.1:5001/spotify/callback"
+SPOTIFY_REDIRECT_URI = os.environ.get(
+    "SPOTIFY_REDIRECT_URI", "http://127.0.0.1:5050/spotify/callback"
 )
 
 client = MongoClient(MONGO_URI)
 db = client["webapp"]
 
-users_col     = db["users"]
-songs_col     = db["songs"]
-events_col    = db["events"]
+users_col = db["users"]
+songs_col = db["songs"]
+events_col = db["events"]
 playlists_col = db["playlists"]
 
 
@@ -105,12 +105,12 @@ def _get_valid_token(user_doc):
     if resp.status_code != 200:
         return None
 
-    token_data   = resp.json()
+    token_data = resp.json()
     access_token = token_data["access_token"]
-    expires_at   = int(time.time()) + token_data.get("expires_in", 3600) - 60
+    expires_at = int(time.time()) + token_data.get("expires_in", 3600) - 60
 
     update_fields = {
-        "spotify_access_token":    access_token,
+        "spotify_access_token": access_token,
         "spotify_token_expires_at": expires_at,
     }
     if "refresh_token" in token_data:
@@ -122,6 +122,7 @@ def _get_valid_token(user_doc):
 
 # ── Pages ──────────────────────────────────────────────────────────────────────
 
+
 @app.route("/")
 def index():
     user = session.get("auth_user")
@@ -132,7 +133,7 @@ def index():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        email    = normalize_email(request.form.get("email", ""))
+        email = normalize_email(request.form.get("email", ""))
         password = request.form.get("password", "")
 
         if not email or not password:
@@ -158,8 +159,8 @@ def login():
 
 @app.route("/register", methods=["POST"])
 def register():
-    name     = request.form.get("name", "").strip()
-    email    = normalize_email(request.form.get("email", ""))
+    name = request.form.get("name", "").strip()
+    email = normalize_email(request.form.get("email", ""))
     password = request.form.get("password", "")
 
     if not name or not email or not password:
@@ -171,15 +172,15 @@ def register():
     if users_col.find_one({"email": email}):
         return redirect(url_for("login", error="user_exists", email=email))
 
-    new_id   = ObjectId()
+    new_id = ObjectId()
     user_doc = {
-        "_id":          new_id,
-        "user_id":      str(new_id),
-        "username":     email,
-        "name":         name,
-        "email":        email,
+        "_id": new_id,
+        "user_id": str(new_id),
+        "username": email,
+        "name": name,
+        "email": email,
         "passwordHash": generate_password_hash(password),
-        "createdAt":    datetime.now(timezone.utc),
+        "createdAt": datetime.now(timezone.utc),
     }
     users_col.insert_one(user_doc)
     session["auth_user"] = build_session_user(user_doc)
@@ -214,7 +215,10 @@ def settings():
     elif request.args.get("spotify_error") == "access_denied":
         connect_message = {"type": "error", "text": "Spotify connection was cancelled."}
     elif request.args.get("spotify_error"):
-        connect_message = {"type": "error", "text": "Spotify connection failed. Please try again."}
+        connect_message = {
+            "type": "error",
+            "text": "Spotify connection failed. Please try again.",
+        }
 
     return render_template(
         "settings.html",
@@ -225,6 +229,7 @@ def settings():
 
 # ── Spotify OAuth ──────────────────────────────────────────────────────────────
 
+
 @app.route("/spotify/login")
 def spotify_login():
     if not session.get("auth_user"):
@@ -232,11 +237,11 @@ def spotify_login():
     state = secrets.token_urlsafe(16)
     session["spotify_oauth_state"] = state
     params = {
-        "client_id":     SPOTIFY_CLIENT_ID,
+        "client_id": SPOTIFY_CLIENT_ID,
         "response_type": "code",
-        "redirect_uri":  SPOTIFY_REDIRECT_URI,
-        "scope":         "playlist-modify-public",
-        "state":         state,
+        "redirect_uri": SPOTIFY_REDIRECT_URI,
+        "scope": "playlist-modify-public playlist-modify-private",
+        "state": state,
     }
     return redirect(f"https://accounts.spotify.com/authorize?{urlencode(params)}")
 
@@ -246,7 +251,7 @@ def spotify_callback():
     if request.args.get("error"):
         return redirect(url_for("settings", spotify_error="access_denied"))
 
-    code  = request.args.get("code", "")
+    code = request.args.get("code", "")
     state = request.args.get("state", "")
 
     if not state or state != session.pop("spotify_oauth_state", None):
@@ -265,8 +270,8 @@ def spotify_callback():
             "https://accounts.spotify.com/api/token",
             headers={"Authorization": f"Basic {credentials}"},
             data={
-                "grant_type":   "authorization_code",
-                "code":         code,
+                "grant_type": "authorization_code",
+                "code": code,
                 "redirect_uri": SPOTIFY_REDIRECT_URI,
             },
             timeout=10,
@@ -279,15 +284,18 @@ def spotify_callback():
 
     token_data = token_resp.json()
     expires_at = int(time.time()) + token_data.get("expires_in", 3600) - 60
+    print(f"[spotify] callback granted scopes: {token_data.get('scope')}")
 
     try:
         users_col.update_one(
             {"_id": ObjectId(user["id"])},
-            {"$set": {
-                "spotify_access_token":     token_data["access_token"],
-                "spotify_refresh_token":    token_data.get("refresh_token", ""),
-                "spotify_token_expires_at": expires_at,
-            }},
+            {
+                "$set": {
+                    "spotify_access_token": token_data["access_token"],
+                    "spotify_refresh_token": token_data.get("refresh_token", ""),
+                    "spotify_token_expires_at": expires_at,
+                }
+            },
         )
     except InvalidId:
         return redirect(url_for("settings", spotify_error="session_error"))
@@ -303,11 +311,13 @@ def spotify_disconnect():
     try:
         users_col.update_one(
             {"_id": ObjectId(user["id"])},
-            {"$unset": {
-                "spotify_access_token":     "",
-                "spotify_refresh_token":    "",
-                "spotify_token_expires_at": "",
-            }},
+            {
+                "$unset": {
+                    "spotify_access_token": "",
+                    "spotify_refresh_token": "",
+                    "spotify_token_expires_at": "",
+                }
+            },
         )
     except InvalidId:
         pass
@@ -322,6 +332,7 @@ def spotify_status():
 
 # ── Spotify playlist save ──────────────────────────────────────────────────────
 
+
 @app.route("/api/spotify/save-playlist", methods=["POST"])
 def spotify_save_playlist():
     user = session.get("auth_user")
@@ -329,7 +340,11 @@ def spotify_save_playlist():
         return jsonify({"ok": False, "message": "Not logged in"}), 401
 
     data = request.get_json(silent=True)
-    if not data or not isinstance(data.get("tracks"), list) or not data.get("playlist_name"):
+    if (
+        not data
+        or not isinstance(data.get("tracks"), list)
+        or not data.get("playlist_name")
+    ):
         return jsonify({"ok": False, "message": "Invalid payload"}), 400
 
     try:
@@ -338,15 +353,27 @@ def spotify_save_playlist():
         return jsonify({"ok": False, "message": "Session error"}), 400
 
     if not user_doc or not user_doc.get("spotify_access_token"):
-        return jsonify(
-            {"ok": False, "message": "Spotify not connected. Connect in Settings first."}
-        ), 403
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "message": "Spotify not connected. Connect in Settings first.",
+                }
+            ),
+            403,
+        )
 
     access_token = _get_valid_token(user_doc)
     if not access_token:
-        return jsonify(
-            {"ok": False, "message": "Spotify token expired — reconnect in Settings."}
-        ), 403
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "message": "Spotify token expired — reconnect in Settings.",
+                }
+            ),
+            403,
+        )
 
     auth_header = {"Authorization": f"Bearer {access_token}"}
     json_header = {**auth_header, "Content-Type": "application/json"}
@@ -358,8 +385,8 @@ def spotify_save_playlist():
             "https://api.spotify.com/v1/me/playlists",
             headers=json_header,
             json={
-                "name":        playlist_name,
-                "public":      True,
+                "name": playlist_name,
+                "public": True,
                 "description": "Generated by VibeList",
             },
             timeout=10,
@@ -369,20 +396,28 @@ def spotify_save_playlist():
         return jsonify({"ok": False, "message": "Could not reach Spotify API."}), 502
 
     if create_resp.status_code not in (200, 201):
-        print(f"[spotify] create playlist returned {create_resp.status_code}: {create_resp.text}")
-        return jsonify({
-            "ok": False,
-            "message": f"Failed to create playlist ({create_resp.status_code}): {create_resp.text}",
-        }), 502
+        print(
+            f"[spotify] create playlist returned {create_resp.status_code}: {create_resp.text}"
+        )
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "message": f"Failed to create playlist ({create_resp.status_code}): {create_resp.text}",
+                }
+            ),
+            502,
+        )
 
     playlist_data = create_resp.json()
-    playlist_id   = playlist_data["id"]
-    playlist_url  = playlist_data["external_urls"]["spotify"]
+    playlist_id = playlist_data["id"]
+    playlist_url = playlist_data["external_urls"]["spotify"]
+    print(f"[spotify] playlist created: id={repr(playlist_id)} url={playlist_url}")
 
     # Search Spotify for each track's URI
     uris = []
     for track in data["tracks"]:
-        title  = track.get("title", "")  if isinstance(track, dict) else ""
+        title = track.get("title", "") if isinstance(track, dict) else ""
         artist = track.get("artist", "") if isinstance(track, dict) else ""
         if not title:
             continue
@@ -398,30 +433,74 @@ def spotify_save_playlist():
                 items = search_resp.json().get("tracks", {}).get("items", [])
                 if items:
                     uris.append(items[0]["uri"])
-        except http.exceptions.RequestException:
-            pass  # best-effort: skip unresolvable tracks
+            else:
+                print(
+                    f"[spotify] search failed {search_resp.status_code} for '{query}': {search_resp.text}"
+                )
+        except http.exceptions.RequestException as exc:
+            print(f"[spotify] search request failed for '{query}': {exc}")
 
+    print(f"[spotify] search complete: {len(uris)}/{len(data['tracks'])} URIs found")
+
+    # Verify token identity vs playlist owner before adding tracks
+    me_resp = http.get("https://api.spotify.com/v1/me", headers=auth_header, timeout=10)
+    pl_resp = http.get(
+        f"https://api.spotify.com/v1/playlists/{playlist_id}",
+        headers=auth_header,
+        timeout=10,
+    )
+    if me_resp.status_code == 200 and pl_resp.status_code == 200:
+        me_id = me_resp.json().get("id")
+        pl_json = pl_resp.json()
+        owner_id = pl_json.get("owner", {}).get("id")
+        print(
+            f"[spotify] token user={me_id!r}  playlist owner={owner_id!r}  match={me_id == owner_id}"
+        )
+        print(
+            f"[spotify] playlist public={pl_json.get('public')}  collaborative={pl_json.get('collaborative')}"
+        )
+    else:
+        print(
+            f"[spotify] verify failed: /me={me_resp.status_code} /playlists={pl_resp.status_code}"
+        )
+
+    # TEMP: test with single track only
+    uris = uris[:1]
     # Add URIs in batches of 100 (Spotify API limit)
+    print(f"[spotify] adding {len(uris)} URIs, sample: {uris[:2]}")
     for i in range(0, len(uris), 100):
+        batch = uris[i : i + 100]
         try:
-            http.post(
+            add_resp = http.post(
                 f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
-                headers=json_header,
-                json={"uris": uris[i : i + 100]},
+                headers=auth_header,
+                params={"uris": ",".join(batch)},
                 timeout=10,
             )
-        except http.exceptions.RequestException:
-            pass
+            if add_resp.status_code not in (200, 201):
+                print(
+                    f"[spotify] add tracks returned {add_resp.status_code}: {add_resp.text}"
+                )
+            else:
+                print(f"[spotify] added batch of {len(batch)} tracks OK")
+        except http.exceptions.RequestException as exc:
+            print(f"[spotify] add tracks request failed: {exc}")
 
-    return jsonify({
-        "ok":    True,
-        "url":   playlist_url,
-        "found": len(uris),
-        "total": len(data["tracks"]),
-    }), 201
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "url": playlist_url,
+                "found": len(uris),
+                "total": len(data["tracks"]),
+            }
+        ),
+        201,
+    )
 
 
 # ── ML recommendations proxy ───────────────────────────────────────────────────
+
 
 @app.route("/api/recommendations/<user_id>")
 def get_recommendations(user_id):
@@ -435,7 +514,9 @@ def get_recommendations(user_id):
         return jsonify(resp.json()), resp.status_code
     except http.exceptions.RequestException as exc:
         return (
-            jsonify({"error": "Recommendation service unavailable", "detail": str(exc)}),
+            jsonify(
+                {"error": "Recommendation service unavailable", "detail": str(exc)}
+            ),
             503,
         )
 
@@ -447,9 +528,9 @@ def save_playlist():
         return jsonify({"ok": False, "message": "Invalid payload"}), 400
 
     doc = {
-        "user_id":  data.get("user_id") or None,
-        "tracks":   data["tracks"],
-        "savedAt":  data.get("savedAt", datetime.now(timezone.utc).isoformat()),
+        "user_id": data.get("user_id") or None,
+        "tracks": data["tracks"],
+        "savedAt": data.get("savedAt", datetime.now(timezone.utc).isoformat()),
         "createdAt": datetime.now(timezone.utc),
     }
     result = playlists_col.insert_one(doc)
@@ -462,7 +543,11 @@ def save_playlist():
                 try:
                     http.post(
                         f"{ML_APP_URL}/events",
-                        json={"user_id": user_id, "song_id": song_id, "event_type": "save"},
+                        json={
+                            "user_id": user_id,
+                            "song_id": song_id,
+                            "event_type": "save",
+                        },
                         timeout=3,
                     )
                 except http.exceptions.RequestException:
