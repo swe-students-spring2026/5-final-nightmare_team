@@ -13,18 +13,18 @@ from app.models import EVENT_WEIGHTS, MOCK_SONGS
 from app.recommender import ItemBasedRecommender, NotEnoughDataError
 
 recommender = ItemBasedRecommender()
-_db_initialized = False
+_DB_INITIALIZED = False  # pylint: disable=invalid-name
 
 app = Flask(__name__)
 
 
 @app.before_request
 def _ensure_db():
-    global _db_initialized  # pylint: disable=global-statement
-    if not _db_initialized:
+    global _DB_INITIALIZED  # pylint: disable=global-statement,invalid-name
+    if not _DB_INITIALIZED:
         database.init_db()
         _startup_train()
-        _db_initialized = True
+        _DB_INITIALIZED = True
 
 
 def _startup_train():
@@ -210,7 +210,10 @@ def generate_playlist():
     db = database.get_db()
     all_songs = list(db["songs"].find({}, {"_id": 0}))
     if not all_songs:
-        return jsonify({"error": "No songs in database. Run the seed script first."}), 404
+        return (
+            jsonify({"error": "No songs in database. Run the seed script first."}),
+            404,
+        )
 
     def score_song(song):
         score = 0.0
