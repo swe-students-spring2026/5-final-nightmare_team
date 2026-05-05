@@ -237,6 +237,53 @@ def test_recommendations_untrained_returns_mock(client):
     assert isinstance(data["recommendations"], list)
 
 
+def test_recommendations_untrained_respects_k(client):
+    """GET /recommendations should cap mock fallback results at requested k."""
+    c, cols = client
+    cols["users"].find_one.return_value = {"user_id": "u1"}
+    cols["songs"].find.return_value = _Cursor(
+        [
+            {"song_id": "s1", "title": "One", "artist": "A", "genre": "pop"},
+            {"song_id": "s2", "title": "Two", "artist": "B", "genre": "rock"},
+        ]
+    )
+    res = c.get("/recommendations/u1?k=2")
+    data = res.get_json()
+    assert res.status_code == 200
+    assert data["source"] == "mock"
+    assert len(data["recommendations"]) == 2
+    assert [item["song_id"] for item in data["recommendations"]] == ["s1", "s2"]
+
+
+def test_recommendations_trained_returns_model_source(client):
+    """GET /recommendations should return model source after successful training."""
+    c, cols = client
+    cols["events"].find.return_value = _Cursor(
+        [
+            {"user_id": "u1", "song_id": "s1", "event_type": "like", "weight": 5.0},
+            {"user_id": "u1", "song_id": "s2", "event_type": "like", "weight": 5.0},
+            {"user_id": "u2", "song_id": "s2", "event_type": "like", "weight": 5.0},
+            {"user_id": "u2", "song_id": "s3", "event_type": "like", "weight": 5.0},
+        ]
+    )
+    cols["songs"].find.return_value = _Cursor(
+        [
+            {"song_id": "s1", "title": "T1", "artist": "A1", "genre": "pop"},
+            {"song_id": "s2", "title": "T2", "artist": "A2", "genre": "rock"},
+            {"song_id": "s3", "title": "T3", "artist": "A3", "genre": "indie"},
+        ]
+    )
+    cols["users"].find.return_value = _Cursor([{"user_id": "u1"}, {"user_id": "u2"}])
+    assert c.post("/train").status_code == 200
+
+    cols["users"].find_one.return_value = {"user_id": "u1"}
+    res = c.get("/recommendations/u1?k=5")
+    data = res.get_json()
+    assert res.status_code == 200
+    assert data["source"] == "model"
+    assert [item["song_id"] for item in data["recommendations"]] == ["s3"]
+
+
 # ── GET /songs/<song_id>/similar ──────────────────────────────────────────────
 
 
@@ -257,6 +304,53 @@ def test_similar_songs_untrained_returns_mock(client):
     data = res.get_json()
     assert data["source"] == "mock"
     assert data["song_id"] == "s1"
+
+
+def test_similar_songs_untrained_excludes_source_song(client):
+    """GET /songs/<id>/similar mock fallback should exclude the requested song."""
+    c, cols = client
+    cols["songs"].find_one.return_value = {"song_id": "s1"}
+    cols["songs"].find.return_value = _Cursor(
+        [
+            {"song_id": "s1", "title": "One", "artist": "A", "genre": "pop"},
+            {"song_id": "s2", "title": "Two", "artist": "B", "genre": "rock"},
+            {"song_id": "s3", "title": "Three", "artist": "C", "genre": "indie"},
+        ]
+    )
+    res = c.get("/songs/s1/similar?k=2")
+    data = res.get_json()
+    assert res.status_code == 200
+    assert data["source"] == "mock"
+    assert [item["song_id"] for item in data["similar"]] == ["s2", "s3"]
+
+
+def test_similar_songs_trained_returns_model_source(client):
+    """GET /songs/<id>/similar should return model source after training."""
+    c, cols = client
+    cols["events"].find.return_value = _Cursor(
+        [
+            {"user_id": "u1", "song_id": "s1", "event_type": "like", "weight": 5.0},
+            {"user_id": "u1", "song_id": "s2", "event_type": "like", "weight": 5.0},
+            {"user_id": "u2", "song_id": "s2", "event_type": "like", "weight": 5.0},
+            {"user_id": "u2", "song_id": "s3", "event_type": "like", "weight": 5.0},
+        ]
+    )
+    cols["songs"].find.return_value = _Cursor(
+        [
+            {"song_id": "s1", "title": "T1", "artist": "A1", "genre": "pop"},
+            {"song_id": "s2", "title": "T2", "artist": "A2", "genre": "rock"},
+            {"song_id": "s3", "title": "T3", "artist": "A3", "genre": "indie"},
+        ]
+    )
+    cols["users"].find.return_value = _Cursor([{"user_id": "u1"}, {"user_id": "u2"}])
+    assert c.post("/train").status_code == 200
+
+    cols["songs"].find_one.return_value = {"song_id": "s1"}
+    res = c.get("/songs/s1/similar?k=2")
+    data = res.get_json()
+    assert res.status_code == 200
+    assert data["source"] == "model"
+    assert all(item["song_id"] != "s1" for item in data["similar"])
 
 
 # ── POST /train ───────────────────────────────────────────────────────────────

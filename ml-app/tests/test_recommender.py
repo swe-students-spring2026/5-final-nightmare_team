@@ -88,12 +88,34 @@ def test_fit_missing_columns_raises(songs):
         r.fit(bad, songs)
 
 
+def test_fit_missing_song_columns_raises(events):
+    """fit() with songs missing required columns should raise ValueError."""
+    r = ItemBasedRecommender()
+    bad_songs = pd.DataFrame({"song_id": ["s1", "s2"], "title": ["One", "Two"]})
+    with pytest.raises(ValueError):
+        r.fit(events, bad_songs)
+
+
 def test_fit_stores_songs(events, songs):
     """fit() should index songs by song_id."""
     r = ItemBasedRecommender()
     r.fit(events, songs)
     assert "s1" in r.songs.index
     assert "s2" in r.songs.index
+
+
+def test_fit_deduplicates_song_metadata(events):
+    """fit() should keep one metadata row per song_id."""
+    r = ItemBasedRecommender()
+    duplicate_songs = _songs(
+        ("s1", "Song One", "Artist A", "pop"),
+        ("s1", "Song One Remix", "Artist A", "pop"),
+        ("s2", "Song Two", "Artist B", "rock"),
+        ("s3", "Song Three", "Artist C", "indie"),
+    )
+    r.fit(events, duplicate_songs)
+    assert r.songs.index.tolist().count("s1") == 1
+    assert r.songs.loc["s1"]["title"] == "Song One"
 
 
 def test_fit_builds_similarity_matrix(events, songs):
@@ -161,6 +183,22 @@ def test_recommend_scores_are_positive(trained):
     """All returned recommendation scores should be positive."""
     for item in trained.recommend("u1", 10):
         assert item["score"] > 0
+
+
+def test_recommend_handles_missing_optional_genre(events):
+    """Recommendation result metadata should allow songs without a genre column."""
+    songs_without_genre = pd.DataFrame(
+        [
+            {"song_id": "s1", "title": "Song One", "artist": "Artist A"},
+            {"song_id": "s2", "title": "Song Two", "artist": "Artist B"},
+            {"song_id": "s3", "title": "Song Three", "artist": "Artist C"},
+        ]
+    )
+    r = ItemBasedRecommender()
+    r.fit(events, songs_without_genre)
+    results = r.recommend("u1", 10)
+    assert results
+    assert results[0]["genre"] is None
 
 
 # ── similar_songs ─────────────────────────────────────────────────────────────

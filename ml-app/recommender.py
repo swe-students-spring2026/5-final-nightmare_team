@@ -33,7 +33,7 @@ class ItemBasedRecommender:
             raise NotEnoughDataError(
                 "At least one event is required to train the model."
             )
-        if songs.empty or songs["song_id"].nunique() < 2:
+        if songs.empty:
             raise NotEnoughDataError(
                 "At least two songs are required to train the model."
             )
@@ -41,6 +41,15 @@ class ItemBasedRecommender:
         required_event_columns = {"user_id", "song_id", "event_type", "weight"}
         if not required_event_columns.issubset(events.columns):
             raise ValueError("Events data is missing required columns.")
+
+        required_song_columns = {"song_id", "title", "artist"}
+        if not required_song_columns.issubset(songs.columns):
+            raise ValueError("Songs data is missing required columns.")
+
+        if songs["song_id"].nunique() < 2:
+            raise NotEnoughDataError(
+                "At least two songs are required to train the model."
+            )
 
         matrix = events.pivot_table(
             index="user_id",
@@ -131,11 +140,12 @@ class ItemBasedRecommender:
     def _song_result(self, song_id: str, score: float) -> dict[str, object]:
         """Build a result dict for a song with its similarity score."""
         song = self.songs.loc[song_id]
+        genre = song.get("genre")
         return {
             "song_id": str(song["song_id"]),
             "title": str(song["title"]),
             "artist": str(song["artist"]),
-            "genre": None if pd.isna(song["genre"]) else str(song["genre"]),
+            "genre": None if pd.isna(genre) else str(genre),
             "score": round(float(score), 4),
         }
 
