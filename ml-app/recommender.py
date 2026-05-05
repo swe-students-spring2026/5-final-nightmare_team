@@ -184,7 +184,9 @@ class ContentBasedRecommender:
         if song_id not in self.song_similarity.index:
             raise KeyError(f"Unknown song: {song_id}")
 
-        similarities = self.song_similarity.loc[song_id].drop(labels=[song_id], errors="ignore")
+        similarities = self.song_similarity.loc[song_id].drop(
+            labels=[song_id], errors="ignore"
+        )
         ranked = similarities.sort_values(ascending=False).head(k)
         return [self._song_result(sid, float(score)) for sid, score in ranked.items()]
 
@@ -201,8 +203,13 @@ class ContentBasedRecommender:
         for source_song_id in seed_song_ids:
             if source_song_id not in self.song_similarity.index:
                 continue
-            for candidate_song_id, score in self.song_similarity.loc[source_song_id].items():
-                if candidate_song_id in seen_song_ids or candidate_song_id == source_song_id:
+            for candidate_song_id, score in self.song_similarity.loc[
+                source_song_id
+            ].items():
+                if (
+                    candidate_song_id in seen_song_ids
+                    or candidate_song_id == source_song_id
+                ):
                     continue
                 prev = candidate_scores.get(candidate_song_id, 0.0)
                 candidate_scores[candidate_song_id] = prev + float(score)
@@ -223,7 +230,9 @@ class ContentBasedRecommender:
 
     def _ensure_ready(self) -> None:
         if not self.trained:
-            raise RecommenderNotReadyError("Content-based model has not been trained yet.")
+            raise RecommenderNotReadyError(
+                "Content-based model has not been trained yet."
+            )
 
 
 class HybridRecommender:
@@ -252,7 +261,9 @@ class HybridRecommender:
         self._events = events.copy()
 
         if not songs.empty and "tags" in songs.columns:
-            songs_with_tags = songs[songs["tags"].notna() & (songs["tags"].str.strip() != "")]
+            songs_with_tags = songs[
+                songs["tags"].notna() & (songs["tags"].str.strip() != "")
+            ]
             if len(songs_with_tags) >= 2:
                 self.cb.fit(songs)
 
@@ -271,7 +282,8 @@ class HybridRecommender:
         if self.cb.trained and not self._events.empty:
             user_events = self._events[self._events["user_id"] == user_id]
             positive_events = user_events[
-                (user_events["weight"] > 0) & user_events["event_type"].isin(POSITIVE_EVENT_TYPES)
+                (user_events["weight"] > 0)
+                & user_events["event_type"].isin(POSITIVE_EVENT_TYPES)
             ]
             if not positive_events.empty:
                 seed_ids = positive_events["song_id"].tolist()

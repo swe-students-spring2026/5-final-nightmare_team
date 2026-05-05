@@ -28,7 +28,6 @@ from app.schemas import (
     UserResponse,
 )
 
-
 recommender = HybridRecommender()
 
 

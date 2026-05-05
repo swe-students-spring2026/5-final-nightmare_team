@@ -62,7 +62,13 @@ def seed() -> None:
 
     for song_id, title, artist, genre in SONGS:
         db["songs"].insert_one(
-            {"song_id": song_id, "title": title, "artist": artist, "genre": genre, "tags": None}
+            {
+                "song_id": song_id,
+                "title": title,
+                "artist": artist,
+                "genre": genre,
+                "tags": None,
+            }
         )
 
     for user_id, song_id, event_type in EVENTS:
@@ -112,8 +118,11 @@ def load_lastfm_songs(limit: int = 2000, csv_path: str | None = None) -> int:
             if existing is None:
                 db["songs"].insert_one(
                     {
-                        "song_id": song_id, "title": title,
-                        "artist": artist, "genre": genre, "tags": tags,
+                        "song_id": song_id,
+                        "title": title,
+                        "artist": artist,
+                        "genre": genre,
+                        "tags": tags,
                     }
                 )
                 inserted += 1
