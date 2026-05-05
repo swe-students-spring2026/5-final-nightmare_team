@@ -326,7 +326,65 @@ sidebarBackdrop.addEventListener('click', () => {
   sidebarBackdrop.classList.add('hidden');
 });
 
+// ── Saved Playlists ────────────────────────────────────────────────────────
+
+const playlistsLoading = document.getElementById('playlistsLoading');
+const playlistsList    = document.getElementById('playlistsList');
+const playlistsEmpty   = document.getElementById('playlistsEmpty');
+const playlistCount    = document.getElementById('playlistCount');
+
+async function loadSavedPlaylists() {
+  try {
+    const res  = await fetch('/api/playlists');
+    if (res.status === 401) {
+      playlistsLoading.classList.add('hidden');
+      playlistsEmpty.textContent = 'Sign in to view saved playlists.';
+      playlistsEmpty.classList.remove('hidden');
+      return;
+    }
+    const data = await res.json();
+    const playlists = data.playlists || [];
+
+    playlistsLoading.classList.add('hidden');
+
+    if (playlists.length === 0) {
+      playlistsEmpty.classList.remove('hidden');
+      return;
+    }
+
+    playlistCount.textContent = `${playlists.length} saved`;
+    playlistsList.innerHTML = playlists.map((p) => {
+      const date    = p.savedAt ? p.savedAt.slice(0, 10) : (p.createdAt || '').slice(0, 10);
+      const count   = (p.tracks || []).length;
+      const preview = (p.tracks || []).slice(0, 2).map((t) => t.title || '').filter(Boolean).join(', ');
+      return `
+        <li class="flex items-center justify-between gap-3 bg-spotify-card rounded-lg px-4 py-3">
+          <div class="min-w-0">
+            <p class="text-sm font-medium truncate">${count} tracks${preview ? ' · ' + preview : ''}</p>
+            <p class="text-xs text-spotify-subtle">${date}</p>
+          </div>
+          <a href="/api/playlists/${p.id}/csv"
+             class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                    border border-spotify-card text-spotify-subtle hover:border-spotify-green
+                    hover:text-spotify-green transition-colors"
+             download>
+            <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+              <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+            </svg>
+            CSV
+          </a>
+        </li>`;
+    }).join('');
+    playlistsList.classList.remove('hidden');
+  } catch {
+    playlistsLoading.classList.add('hidden');
+    playlistsEmpty.textContent = 'Could not load playlists.';
+    playlistsEmpty.classList.remove('hidden');
+  }
+}
+
 // ── Boot ───────────────────────────────────────────────────────────────────
 
 initGenreChips();
 loadSettings();
+loadSavedPlaylists();

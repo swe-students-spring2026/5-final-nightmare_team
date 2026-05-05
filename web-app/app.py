@@ -1,9 +1,21 @@
 """Flask web application with MongoDB Atlas connection."""
 
+import csv
+import io
 import os
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from bson import ObjectId
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 import requests as http
 from pymongo import MongoClient
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -214,6 +226,27 @@ def api_record_event():
         return jsonify({"error": str(exc)}), 503
 
 
+@app.route("/api/playlists", methods=["GET"])
+def get_playlists():
+    """Return the current user's saved playlists, newest first."""
+    if not session.get("auth_user"):
+        return jsonify({"ok": False, "message": "Sign in required."}), 401
+    user_id = session["auth_user"]["id"]
+    docs = list(
+        playlists_col.find(
+            {"user_id": user_id},
+            {"_id": 1, "savedAt": 1, "createdAt": 1, "tracks": 1},
+        )
+        .sort("createdAt", -1)
+        .limit(50)
+    )
+    for doc in docs:
+        doc["id"] = str(doc.pop("_id"))
+        if isinstance(doc.get("createdAt"), datetime):
+            doc["createdAt"] = doc["createdAt"].isoformat()
+    return jsonify({"ok": True, "playlists": docs}), 200
+
+
 @app.route("/api/playlists", methods=["POST"])
 def save_playlist():
     """Save a generated playlist to MongoDB and record save events in ml-app."""
@@ -249,6 +282,54 @@ def save_playlist():
     _trigger_train()
 
     return jsonify({"ok": True, "id": str(result.inserted_id)}), 201
+
+
+@app.route("/api/playlists/<playlist_id>/csv")
+def download_playlist_csv(playlist_id):
+    """Return a saved playlist as a downloadable CSV file."""
+    if not session.get("auth_user"):
+        return jsonify({"ok": False, "message": "Sign in to download playlists."}), 401
+    try:
+        oid = ObjectId(playlist_id)
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "message": "Invalid playlist id."}), 400
+
+    doc = playlists_col.find_one({"_id": oid, "user_id": session["auth_user"]["id"]})
+    if not doc:
+        return jsonify({"ok": False, "message": "Playlist not found."}), 404
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        ["#", "title", "artist", "genre", "mood", "era", "song_id", "score"]
+    )
+    for i, track in enumerate(doc.get("tracks", []), start=1):
+        if not isinstance(track, dict):
+            continue
+        mood = track.get("mood", "")
+        if isinstance(mood, list):
+            mood = ", ".join(mood)
+        writer.writerow(
+            [
+                i,
+                track.get("title", ""),
+                track.get("artist", ""),
+                track.get("genre", ""),
+                mood,
+                track.get("era", ""),
+                track.get("song_id", ""),
+                track.get("score", ""),
+            ]
+        )
+
+    csv_bytes = buf.getvalue().encode("utf-8")
+    saved_at = doc.get("savedAt", "playlist")[:10]
+    filename = f"playlist_{saved_at}.csv"
+    return Response(
+        csv_bytes,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.route("/api/generate-playlist", methods=["POST"])

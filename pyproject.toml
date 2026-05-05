@@ -7,5 +7,5 @@ pythonpath = [
   "."
 ]
 testpaths = [
-    "tests",
+    "ml-app/tests",
 ]

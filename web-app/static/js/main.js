@@ -194,11 +194,19 @@ function renderResults(data) {
 async function handleSave() {
   if (!state.playlist.length) return;
   saveBtn.disabled = true;
+  saveBtn.innerHTML = '<svg style="display:inline;width:14px;height:14px;animation:spin 1s linear infinite;vertical-align:middle;margin-right:5px;" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4" stroke-dashoffset="10"/></svg>Saving…';
   const result = await savePlaylist(state.playlist, window.CURRENT_USER?.id || null);
   saveBtn.disabled = false;
+  saveBtn.textContent = 'Save';
   if (result.ok) {
-    showToast('Playlist saved!');
+    showToast('Saved! Downloading CSV…');
     loadRecommendations();
+    const a = document.createElement('a');
+    a.href = `/api/playlists/${result.id}/csv`;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   } else if (result.status === 401 || result.message?.includes('Sign in')) {
     showToast('Sign in to save playlists.', true);
     setTimeout(() => { window.location.href = '/login'; }, 1500);
