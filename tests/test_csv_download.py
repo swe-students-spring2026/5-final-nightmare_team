@@ -9,9 +9,33 @@ TEST_PASSWORD = "TestPass123!"
 TEST_NAME = "CSV Tester"
 
 MOCK_TRACKS = [
-    {"song_id": "s1", "title": "Blinding Lights", "artist": "The Weeknd", "genre": "Pop", "mood": ["Energetic"], "era": "20s", "score": 0.95},
-    {"song_id": "s2", "title": "Levitating",      "artist": "Dua Lipa",   "genre": "Pop", "mood": ["Happy"],    "era": "20s", "score": 0.91},
-    {"song_id": "s3", "title": "Watermelon Sugar","artist": "Harry Styles","genre": "Pop","mood": ["Chill"],    "era": "20s", "score": 0.88},
+    {
+        "song_id": "s1",
+        "title": "Blinding Lights",
+        "artist": "The Weeknd",
+        "genre": "Pop",
+        "mood": ["Energetic"],
+        "era": "20s",
+        "score": 0.95,
+    },
+    {
+        "song_id": "s2",
+        "title": "Levitating",
+        "artist": "Dua Lipa",
+        "genre": "Pop",
+        "mood": ["Happy"],
+        "era": "20s",
+        "score": 0.91,
+    },
+    {
+        "song_id": "s3",
+        "title": "Watermelon Sugar",
+        "artist": "Harry Styles",
+        "genre": "Pop",
+        "mood": ["Chill"],
+        "era": "20s",
+        "score": 0.88,
+    },
 ]
 
 
@@ -21,8 +45,8 @@ def login(page):
     # Try register first
     page.click("#tab-register")
     page.wait_for_selector("#panel-register", state="visible")
-    page.fill('#panel-register input[name="name"]',     TEST_NAME)
-    page.fill('#panel-register input[name="email"]',    TEST_EMAIL)
+    page.fill('#panel-register input[name="name"]', TEST_NAME)
+    page.fill('#panel-register input[name="email"]', TEST_EMAIL)
     page.fill('#panel-register input[name="password"]', TEST_PASSWORD)
     page.click('#panel-register button[type="submit"]')
     page.wait_for_load_state("networkidle")
@@ -30,7 +54,7 @@ def login(page):
     if "/login" in page.url:
         page.click("#tab-login")
         page.wait_for_selector("#panel-login", state="visible")
-        page.fill('#panel-login input[name="email"]',    TEST_EMAIL)
+        page.fill('#panel-login input[name="email"]', TEST_EMAIL)
         page.fill('#panel-login input[name="password"]', TEST_PASSWORD)
         page.click('#panel-login button[type="submit"]')
         page.wait_for_load_state("networkidle")
@@ -55,16 +79,17 @@ def run():
             lambda route: route.fulfill(
                 status=200,
                 content_type="application/json",
-                body='{"tracks":%s,"source":"tag-based","size":%d}' % (
-                    __import__("json").dumps(MOCK_TRACKS), len(MOCK_TRACKS)
-                ),
+                body='{"tracks":%s,"source":"tag-based","size":%d}'
+                % (__import__("json").dumps(MOCK_TRACKS), len(MOCK_TRACKS)),
             ),
         )
         page.goto(BASE)
         page.wait_for_load_state("networkidle")
 
         # Click a genre chip then generate
-        page.locator('#genre-chips [data-tag="pop"]').wait_for(state="visible", timeout=5000)
+        page.locator('#genre-chips [data-tag="pop"]').wait_for(
+            state="visible", timeout=5000
+        )
         page.locator('#genre-chips [data-tag="pop"]').click()
         page.click("#generate-btn")
         page.wait_for_selector("#results", state="visible", timeout=15000)
@@ -75,8 +100,14 @@ def run():
         print("\n[3] Clicking Save and waiting for loading state + CSV download...")
 
         save_api_calls = []
-        page.on("response", lambda r: save_api_calls.append((r.url, r.status))
-                if "/api/playlists" in r.url else None)
+        page.on(
+            "response",
+            lambda r: (
+                save_api_calls.append((r.url, r.status))
+                if "/api/playlists" in r.url
+                else None
+            ),
+        )
 
         with page.expect_download(timeout=15000) as dl_info:
             page.click("#save-btn")
@@ -101,7 +132,9 @@ def run():
             csv_content = f.read()
 
         lines = [l for l in csv_content.splitlines() if l.strip()]
-        assert "title" in lines[0] and "artist" in lines[0], f"Bad CSV header: {lines[0]}"
+        assert (
+            "title" in lines[0] and "artist" in lines[0]
+        ), f"Bad CSV header: {lines[0]}"
         assert len(lines) > 1, "CSV has no data rows"
         print(f"    CSV '{filename}' — {len(lines)-1} rows, header: {lines[0]}")
         print(f"    First row: {lines[1]}")
@@ -127,7 +160,9 @@ def run():
         visible = page.locator("#playlistsList").is_visible()
         count_text = page.locator("#playlistCount").inner_text()
         items = page.locator("#playlistsList li").count()
-        assert visible and items > 0, f"Saved playlists list not populated (items={items})"
+        assert (
+            visible and items > 0
+        ), f"Saved playlists list not populated (items={items})"
         print(f"    {count_text} displayed, {items} list item(s) ✓")
 
         # Verify each item has a CSV download link
@@ -136,7 +171,9 @@ def run():
         print(f"    Each item has a CSV download link ✓")
 
         browser.close()
-        print("\n✓ All checks passed — save button loads, MongoDB saves, CSV downloads, profile shows playlists.")
+        print(
+            "\n✓ All checks passed — save button loads, MongoDB saves, CSV downloads, profile shows playlists."
+        )
 
 
 if __name__ == "__main__":
