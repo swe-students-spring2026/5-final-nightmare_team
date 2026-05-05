@@ -74,8 +74,6 @@ You only need two things on any platform (macOS, Linux, Windows):
 
 A MongoDB Atlas connection string is also required — see [Environment Variables](#environment-variables).
 
-If you'd rather run the services directly on your machine instead of in containers, you'll also need Python 3.12 and `pipenv` (`pip install --user pipenv`).
-
 ## Environment Variables
 
 The project reads its configuration from a `.env` file at the repository root. This file is **not** committed — copy the template and fill it in:
@@ -102,29 +100,8 @@ DOCKERHUB_USERNAME=your-dockerhub-username
 
 > **Course admins:** the real `.env` (with the team's Atlas credentials and Flask secret) is delivered separately by the due date as required by the assignment instructions.
 
-### MongoDB Atlas setup
 
-1. Create a free cluster on [MongoDB Atlas](https://www.mongodb.com/atlas).
-2. Create a database user and a password.
-3. Under *Network Access*, allow your developer IP (and `0.0.0.0/0` for the Digital Ocean droplet, or the droplet's public IP).
-4. Click *Connect → Drivers* and copy the SRV connection string into `MONGO_URI`. Make sure the path ends with `/webapp` so both services land in the same database.
-
-### CI/CD secrets (GitHub Actions)
-
-Maintainers also need to set the following repository secrets for the deploy pipelines:
-
-| Secret               | Used by                  | Description                                                  |
-| -------------------- | ------------------------ | ------------------------------------------------------------ |
-| `DOCKERHUB_USERNAME` | both build-and-push jobs | Docker Hub login.                                            |
-| `DOCKERHUB_TOKEN`    | both build-and-push jobs | Docker Hub access token (not your password).                 |
-| `DO_HOST`            | both deploy jobs         | Digital Ocean droplet IP or hostname.                        |
-| `DO_USER`            | both deploy jobs         | SSH user on the droplet.                                     |
-| `DO_SSH_KEY`         | both deploy jobs         | Private SSH key authorized on the droplet.                   |
-| `COMMIT_LOG_API`     | event-logger             | Endpoint URL used by the course's commit-stats logger.       |
-
-The droplet must have a `/app/.env` file with the same `MONGO_URI` and `FLASK_SECRET_KEY` so the deployed containers can read them.
-
-## Run with Docker Compose (recommended)
+## Run with Docker Compose
 
 This is the easiest path and works the same on macOS, Linux, and Windows.
 
@@ -135,68 +112,15 @@ cp .env.example .env       # then edit .env with your real values
 docker compose up --build
 ```
 
-When both containers are healthy:
+Go to local host to test:
 
-- Web app: <http://localhost:5050>
-- ML API: <http://localhost:8000>
-- ML health check: <http://localhost:8000/health>
+- <http://localhost:5050>
 
 To stop:
 
 ```bash
 docker compose down
 ```
-
-### Seeding starter data
-
-The recommender needs songs and a few example events before it can produce real recommendations. Run the seed script **once**, after `docker compose up` is running, in a second terminal:
-
-```bash
-docker compose exec ml-app pipenv run python -m app.seed
-```
-
-This populates the `songs`, `users`, and `events` collections in MongoDB and trains the model. After it finishes, the app will return `"source": "model"` recommendations instead of `"source": "mock"`.
-
-To force a retrain at any time:
-
-```bash
-curl -X POST http://localhost:8000/train
-```
-
-## Run Locally Without Docker
-
-Useful when iterating on a single subsystem.
-
-### ml-app
-
-```bash
-cd ml-app
-pipenv install --dev
-MONGO_URI="<your atlas string>" pipenv run python -m app.main
-```
-
-The service listens on <http://localhost:8000>. To seed:
-
-```bash
-MONGO_URI="<your atlas string>" pipenv run python -m app.seed
-```
-
-### web-app
-
-In a second terminal:
-
-```bash
-cd web-app
-pipenv install --dev
-MONGO_URI="<your atlas string>" \
-FLASK_SECRET_KEY="<your secret>" \
-ML_APP_URL="http://localhost:8000" \
-pipenv run python app.py
-```
-
-The UI is at <http://localhost:5000>.
-
-> On Windows PowerShell, set environment variables with `$env:MONGO_URI="..."` instead of the inline `KEY=value command` form.
 
 ## Tests
 
@@ -221,41 +145,21 @@ Each custom subsystem has its own GitHub Actions workflow that runs on every pus
 
 Build-and-push and deploy jobs only run on `push` events, not on pull requests.
 
-## API Reference (ml-app)
+## CI/CD secrets (GitHub Actions)
 
-A handful of endpoints exposed by `ml-app` directly. The web-app proxies most of them under `/api/*`.
+Maintainers also need to set the following repository secrets for the deploy pipelines:
 
-| Method | Path                              | Purpose                                                |
-| ------ | --------------------------------- | ------------------------------------------------------ |
-| GET    | `/health`                         | Liveness check.                                        |
-| POST   | `/users`                          | Create a user.                                         |
-| POST   | `/songs`                          | Create a song.                                         |
-| GET    | `/songs`                          | List all songs.                                        |
-| POST   | `/events`                         | Record a `play`/`like`/`dislike`/`skip`/`save`/`repeat` event. |
-| GET    | `/recommendations/<user_id>?k=10` | Top-k recommendations for a user.                      |
-| GET    | `/songs/<song_id>/similar?k=10`   | Top-k songs similar to a given song.                   |
-| POST   | `/train`                          | Rebuild the collaborative-filtering model.             |
-| POST   | `/generate-playlist`              | Build a playlist from tags and/or seed songs.          |
+| Secret               | Used by                  | Description                                                  |
+| -------------------- | ------------------------ | ------------------------------------------------------------ |
+| `DOCKERHUB_USERNAME` | both build-and-push jobs | Docker Hub login.                                            |
+| `DOCKERHUB_TOKEN`    | both build-and-push jobs | Docker Hub access token (not your password).                 |
+| `DO_HOST`            | both deploy jobs         | Digital Ocean droplet IP or hostname.                        |
+| `DO_USER`            | both deploy jobs         | SSH user on the droplet.                                     |
+| `DO_SSH_KEY`         | both deploy jobs         | Private SSH key authorized on the droplet.                   |
+| `COMMIT_LOG_API`     | event-logger             | Endpoint URL used by the course's commit-stats logger.       |
 
-Until the model has been trained on real data, recommendation responses are tagged `"source": "mock"` and return seeded sample songs so the UI keeps working. After training, responses switch to `"source": "model"`.
+The droplet must have a `/app/.env` file with the same `MONGO_URI` and `FLASK_SECRET_KEY` so the deployed containers can read them.
 
-## Recommender, in Plain Language
-
-1. Every user action (play, like, save, skip, dislike, repeat) is stored as a weighted event in MongoDB.
-2. `POST /train` builds a user × song matrix from all stored events.
-3. Cosine similarity between *song columns* tells us which songs behave similarly across users.
-4. To recommend for a user, we look at songs they've responded to positively and surface unseen songs that are most similar to those.
-
-Event weights:
-
-| Event    | Weight |
-| -------- | -----: |
-| like     |     5  |
-| save     |     4  |
-| repeat   |     3  |
-| play     |     1  |
-| skip     |    -1  |
-| dislike  |    -5  |
 
 ## License
 
