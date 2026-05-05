@@ -89,13 +89,5 @@ jobs:
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
-            docker network create app-network || true
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/vibelist:web-app
-            docker stop web || true
-            docker rm web || true
-            docker run -d --name web \
-              --network app-network \
-              -p 5050:5000 \
-              --env-file /app/.env \
-              -e ML_APP_URL=http://ml-app:8000 \
-              ${{ secrets.DOCKERHUB_USERNAME }}/vibelist:web-app
+            docker compose -f /app/docker-compose.yml up -d --no-deps web
