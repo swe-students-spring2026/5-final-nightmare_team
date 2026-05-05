@@ -1,219 +1,112 @@
-# Music Recommendation API
+# VibeList
 
-A small FastAPI backend for a school-project music recommendation system. The service stores users, songs, and listening feedback in SQLite, then uses item-based collaborative filtering to recommend songs and find similar tracks.
+[![web-app CI/CD](https://github.com/swe-students-spring2026/5-final-nightmare_team/actions/workflows/web-app.yml/badge.svg)](https://github.com/swe-students-spring2026/5-final-nightmare_team/actions/workflows/web-app.yml)
+[![ml-app CI/CD](https://github.com/swe-students-spring2026/5-final-nightmare_team/actions/workflows/ml-app.yml/badge.svg)](https://github.com/swe-students-spring2026/5-final-nightmare_team/actions/workflows/ml-app.yml)
+[![lint-free](https://github.com/swe-students-spring2026/5-final-nightmare_team/actions/workflows/lint-free.yml/badge.svg)](https://github.com/swe-students-spring2026/5-final-nightmare_team/actions/workflows/lint-free.yml)
+[![log github events](https://github.com/swe-students-spring2026/5-final-nightmare_team/actions/workflows/event-logger.yml/badge.svg)](https://github.com/swe-students-spring2026/5-final-nightmare_team/actions/workflows/event-logger.yml)
 
-## Proposed File Tree
+VibeList is a music recommendation web app. Sign in, tell it the vibe you're after, and it builds you a playlist. Like or dislike tracks as you listen and the recommender learns from your feedback to keep getting better.
 
-```text
-.
-├── README.md
-├── requirements.txt
-├── app/
-│   ├── main.py
-│   ├── database.py
-│   ├── models.py
-│   ├── schemas.py
-│   ├── recommender.py
-│   └── seed.py
-└── tests/
-    └── test_api.py
-```
+## Just Want to Try It?
 
-## What The Project Does
+If you only want to **use** the app, you don't need to install anything. Open the live deployment in your browser, create an account, and start building playlists:
 
-The API lets teammates create users and songs, record feedback events such as plays, likes, skips, and saves, train a collaborative-filtering model, and request recommendations.
+**<http://147.182.222.130:5050/>**
 
-The backend has two response modes:
+This instance runs the latest `main` on a Digital Ocean droplet and is redeployed automatically by CI/CD on every push.
 
-- `mock`: returned before a model has been trained, using realistic sample song data so frontend and integration work can continue.
-- `model`: returned after `POST /train` builds the collaborative-filtering model from stored events.
+The rest of this README is for **developers** who want to run, modify, or contribute to the project locally.
 
-## API Endpoints
+The system is split into three cooperating subsystems:
 
-### `GET /health`
+- **web-app** — A Flask web app that serves the UI, handles user accounts, and stores playlists. Talks to `ml-app` over HTTP for recommendations and to MongoDB for everything else.
+- **ml-app** — A Flask service that holds the recommender. It stores users, songs, and feedback events in MongoDB, then trains an item-based collaborative-filtering model (cosine similarity over a user-song matrix using scikit-learn) to produce recommendations and find similar songs.
+- **MongoDB Atlas** — Cloud-hosted MongoDB. Both services share the same `webapp` database.
 
-Returns server status.
+## Team
 
-```json
-{
-  "status": "ok"
-}
-```
+- [Aleks Nuzhnyi](https://github.com/nuzhny25)
+- [Luca Andreani](https://github.com/Landreani04)
+- [Rohit Dayanand](https://github.com/RohitDayanand)
+- [Lucas Bazoberry](https://github.com/lucasbazoberry)
+- [Mikhail Bond](https://github.com/mikhailbond1)
 
-### `POST /users`
+## Container Images
 
-Creates a user.
+Both custom subsystems are published to Docker Hub as tags on the same `vibelist` repository:
 
-Request:
+- **web-app** — [`$landreani04/vibelist:web-app`](https://hub.docker.com/r/landreani04/vibelist)
+- **ml-app** — [`$landreani04/vibelist:ml-app`](https://hub.docker.com/r/landreani04/vibelist)
 
-```json
-{
-  "user_id": "u1",
-  "name": "Avery"
-}
-```
+## Prerequisites
 
-### `POST /songs`
+You only need two things on any platform (macOS, Linux, Windows):
 
-Creates a song.
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine + Docker Compose v2 on Linux)
+- [Git](https://git-scm.com/downloads)
 
-Request:
+A MongoDB Atlas connection string is also required — see [Environment Variables](#environment-variables).
 
-```json
-{
-  "song_id": "s1",
-  "title": "Midnight City",
-  "artist": "M83",
-  "genre": "Electronic"
-}
-```
+## Environment Variables
 
-### `POST /events`
-
-Records user feedback.
-
-Supported `event_type` values:
-
-- `play`
-- `skip`
-- `like`
-- `dislike`
-- `save`
-- `repeat`
-
-Request:
-
-```json
-{
-  "user_id": "u1",
-  "song_id": "s1",
-  "event_type": "like"
-}
-```
-
-### `GET /recommendations/{user_id}?k=10`
-
-Returns recommended songs for a user.
-
-Example mock response:
-
-```json
-{
-  "user_id": "u1",
-  "source": "mock",
-  "recommendations": [
-    {
-      "song_id": "sample-1",
-      "title": "Golden Hour Drive",
-      "artist": "The Demo Tapes",
-      "genre": "Indie Pop",
-      "score": 0.94
-    }
-  ]
-}
-```
-
-Example model response:
-
-```json
-{
-  "user_id": "u1",
-  "source": "model",
-  "recommendations": [
-    {
-      "song_id": "s4",
-      "title": "Dreams",
-      "artist": "Fleetwood Mac",
-      "genre": "Rock",
-      "score": 0.72
-    }
-  ]
-}
-```
-
-### `GET /songs/{song_id}/similar?k=10`
-
-Returns songs most similar to the requested song.
-
-### `POST /train`
-
-Rebuilds the collaborative-filtering model from stored events.
-
-## How Collaborative Filtering Works
-
-Collaborative filtering recommends items by learning from user behavior instead of hand-written rules. This project uses item-based collaborative filtering:
-
-1. Convert feedback events into numeric weights.
-2. Build a user-song matrix where each row is a user and each column is a song.
-3. Use cosine similarity to compare song columns.
-4. Recommend unseen songs that are similar to songs the user responded to positively.
-
-Feedback weights:
-
-| Event | Weight |
-| --- | ---: |
-| play | 1 |
-| skip | -1 |
-| like | 5 |
-| dislike | -5 |
-| save | 4 |
-| repeat | 3 |
-
-## How Feedback Updates Recommendations
-
-Every event is stored in SQLite. When `POST /train` is called, the model is rebuilt from all stored feedback. New likes, saves, repeats, plays, skips, and dislikes change the user-song matrix, which can change both recommendations and similar-song results.
-
-For example, if a user likes more upbeat electronic songs, future recommendations will favor unseen songs that other users interacted with in similar patterns. If the user skips or dislikes a song, that negative signal reduces the chance of similar songs being recommended.
-
-## Run Locally
-
-Create and activate a virtual environment if desired, then install dependencies:
+The project reads its configuration from a `.env` file at the repository root. This file is **not** committed — copy the template and fill it in:
 
 ```bash
-pip install -r requirements.txt
+cp .env.example .env
 ```
 
-Seed the SQLite database:
+Then edit `.env`:
+
+| Variable             | Required | Description                                                                                              |
+| -------------------- | :------: | -------------------------------------------------------------------------------------------------------- |
+| `MONGO_URI`          |    ✅    | MongoDB Atlas SRV connection string. Both services connect to the `webapp` database on this cluster.    |
+| `FLASK_SECRET_KEY`   |    ✅    | Random string used by Flask to sign session cookies. Generate one with `python -c "import secrets; print(secrets.token_hex(32))"`. |
+| `DOCKERHUB_USERNAME` |    ✅    | Your Docker Hub username. Used by `docker-compose.yml` to resolve the image tags.                       |
+
+Example `.env` (with dummy values — do not commit a real one):
+
+```dotenv
+MONGO_URI=mongodb+srv://vibelist_user:CHANGE_ME@your-cluster.mongodb.net/webapp?retryWrites=true&w=majority
+FLASK_SECRET_KEY=replace-with-a-long-random-hex-string
+DOCKERHUB_USERNAME=your-dockerhub-username
+```
+
+> **Course admins:** the real `.env` (with the team's Atlas credentials and Flask secret) is delivered separately by the due date as required by the assignment instructions.
+
+
+## Run with Docker Compose
+
+This is the easiest path and works the same on macOS, Linux, and Windows.
 
 ```bash
-python -m app.seed
+git clone https://github.com/swe-students-spring2026/5-final-nightmare_team.git
+cd 5-final-nightmare_team
+cp .env.example .env       # then edit .env with your real values
+docker compose up --build
 ```
 
-Start the API server:
+Go to local host port 5050:
+
+- <http://localhost:5050>
+
+To stop:
 
 ```bash
-uvicorn app.main:app --reload
+docker compose down
 ```
-
-Then train and test recommendations:
-
-```bash
-curl -X POST http://127.0.0.1:8000/train
-curl "http://127.0.0.1:8000/recommendations/u1?k=5"
-curl "http://127.0.0.1:8000/songs/s1/similar?k=5"
-```
-
-The API docs are available at:
-
-- http://127.0.0.1:8000/docs
-- http://127.0.0.1:8000/openapi.json
-
-## Mocked Endpoint Testing
-
-Teammates can test before training the model:
-
-1. Start the server.
-2. Create or seed users and songs.
-3. Call recommendation endpoints without calling `POST /train`.
-
-Responses will include `"source": "mock"` so callers know they are using fallback sample data. After training succeeds, responses include `"source": "model"`.
 
 ## Tests
 
-Run:
+Each subsystem has its own test suite with an enforced 80% coverage floor (the same threshold CI uses).
 
 ```bash
-pytest
+# ml-app
+cd ml-app && pipenv run pytest tests/ --cov=. --cov-report=term-missing --cov-fail-under=80
+
+# web-app
+cd web-app && pipenv run pytest --cov=. --cov-report=term-missing --cov-fail-under=80
 ```
 
-Tests use an isolated temporary SQLite database and do not require the seeded local database.
+## License
+
+See [LICENSE](./LICENSE).
