@@ -12,6 +12,7 @@ from pymongo.errors import DuplicateKeyError
 from app import database
 from app.models import EVENT_WEIGHTS, MOCK_SONGS
 from app.recommender import HybridRecommender, NotEnoughDataError
+from app.seed import load_lastfm_songs
 from app.schemas import (
     EventCreate,
     EventResponse,
@@ -209,8 +210,6 @@ def seed_lastfm(
     Populate the songs table from the bundled Last.fm dataset and immediately
     train the content-based (tag-similarity) model. No user events required.
     """
-    from app.seed import load_lastfm_songs
-
     inserted = load_lastfm_songs(limit=limit)
 
     db = database.get_db()

@@ -107,6 +107,8 @@ class TrainResponse(BaseModel):
 
 
 class LastFMSeedResponse(BaseModel):
+    """Response model for the Last.fm seed endpoint."""
+
     status: str
     songs_inserted: int
     content_trained: bool

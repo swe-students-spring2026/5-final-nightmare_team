@@ -155,11 +155,13 @@ class ContentBasedRecommender:
         self.song_similarity: pd.DataFrame = pd.DataFrame()
 
     def fit(self, songs: pd.DataFrame) -> None:
-        songs_with_tags = songs[songs["tags"].notna() & (songs["tags"].str.strip() != "")].drop_duplicates(
-            subset=["song_id"]
-        )
+        """Train the TF-IDF tag similarity matrix from songs."""
+        has_tags = songs["tags"].notna() & (songs["tags"].str.strip() != "")
+        songs_with_tags = songs[has_tags].drop_duplicates(subset=["song_id"])
         if len(songs_with_tags) < 2:
-            raise NotEnoughDataError("At least two songs with tags are required for content-based training.")
+            raise NotEnoughDataError(
+                "At least two songs with tags are required for content-based training."
+            )
 
         vectorizer = TfidfVectorizer(
             tokenizer=lambda x: [t.strip().lower() for t in x.split("|") if t.strip()],
@@ -177,6 +179,7 @@ class ContentBasedRecommender:
         self.trained = True
 
     def similar_songs(self, song_id: str, k: int) -> list[dict[str, object]]:
+        """Return the top-k songs most similar to song_id by tag overlap."""
         self._ensure_ready()
         if song_id not in self.song_similarity.index:
             raise KeyError(f"Unknown song: {song_id}")
@@ -201,7 +204,8 @@ class ContentBasedRecommender:
             for candidate_song_id, score in self.song_similarity.loc[source_song_id].items():
                 if candidate_song_id in seen_song_ids or candidate_song_id == source_song_id:
                     continue
-                candidate_scores[candidate_song_id] = candidate_scores.get(candidate_song_id, 0.0) + float(score)
+                prev = candidate_scores.get(candidate_song_id, 0.0)
+                candidate_scores[candidate_song_id] = prev + float(score)
 
         ranked = sorted(candidate_scores.items(), key=lambda x: x[1], reverse=True)
         return [self._song_result(sid, score) for sid, score in ranked[:k] if score > 0]
@@ -235,6 +239,7 @@ class HybridRecommender:
 
     @property
     def trained(self) -> bool:
+        """Return True if at least one sub-model has been trained."""
         return self.cf.trained or self.cb.trained
 
     def fit_content(self, songs: pd.DataFrame) -> None:
@@ -252,6 +257,7 @@ class HybridRecommender:
                 self.cb.fit(songs)
 
     def recommend(self, user_id: str, k: int) -> list[dict[str, object]]:
+        """Return k recommendations for user_id, using CF then content-based fallback."""
         # Try CF first for users with interaction history
         if self.cf.trained and user_id in self.cf.user_song_matrix.index:
             try:
@@ -274,9 +280,12 @@ class HybridRecommender:
                 if results:
                     return results
 
-        raise NotEnoughDataError("Not enough data for recommendations. Add more events or seed the lastfm dataset.")
+        raise NotEnoughDataError(
+            "Not enough data for recommendations. Add more events or seed the lastfm dataset."
+        )
 
     def similar_songs(self, song_id: str, k: int) -> list[dict[str, object]]:
+        """Return k songs similar to song_id, preferring CF similarity over content-based."""
         # CF similarity takes priority when available
         if self.cf.trained and song_id in self.cf.song_similarity.index:
             results = self.cf.similar_songs(song_id, k)

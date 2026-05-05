@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from pymongo.errors import PyMongoError
+
 from app.database import get_db, reset_db
 from app.models import EVENT_WEIGHTS
 
@@ -109,10 +111,13 @@ def load_lastfm_songs(limit: int = 2000, csv_path: str | None = None) -> int:
             existing = db["songs"].find_one({"song_id": song_id})
             if existing is None:
                 db["songs"].insert_one(
-                    {"song_id": song_id, "title": title, "artist": artist, "genre": genre, "tags": tags}
+                    {
+                        "song_id": song_id, "title": title,
+                        "artist": artist, "genre": genre, "tags": tags,
+                    }
                 )
                 inserted += 1
-        except Exception:
+        except PyMongoError:
             pass
 
     return inserted
