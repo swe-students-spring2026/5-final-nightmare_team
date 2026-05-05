@@ -21,6 +21,19 @@ def http_client():
         yield test_client
 
 
+@pytest.fixture
+def auth_client(http_client):
+    """Provide a Flask test client with a logged-in session."""
+    with http_client.session_transaction() as sess:
+        sess["auth_user"] = {
+            "id": "user-123",
+            "user_id": "user-123",
+            "name": "Test Listener",
+            "email": "listener@example.com",
+        }
+    return http_client
+
+
 def test_index(http_client):
     """Test that the index route returns 200."""
     res = http_client.get("/")
@@ -148,53 +161,57 @@ def test_health_error(http_client):
     assert data["status"] == "error"
 
 
-def test_save_playlist_valid(http_client):
+def test_save_playlist_unauthenticated(http_client):
+    """Test POST /api/playlists without a session returns 401."""
+    res = http_client.post("/api/playlists", json={"tracks": []})
+    assert res.status_code == 401
+    assert res.get_json()["ok"] is False
+
+
+def test_save_playlist_valid(auth_client):
     """Test POST /api/playlists with a valid payload returns 201."""
     payload = {
         "tracks": [
             {"id": 1, "title": "Test Track", "artist": "Artist", "duration": "3:00"}
         ]
     }
-    res = http_client.post("/api/playlists", json=payload)
+    res = auth_client.post("/api/playlists", json=payload)
     assert res.status_code == 201
     data = res.get_json()
     assert data["ok"] is True
     assert "id" in data
 
 
-def test_save_playlist_missing_tracks(http_client):
+def test_save_playlist_missing_tracks(auth_client):
     """Test POST /api/playlists with no tracks key returns 400."""
-    res = http_client.post("/api/playlists", json={})
+    res = auth_client.post("/api/playlists", json={})
     assert res.status_code == 400
     data = res.get_json()
     assert data["ok"] is False
 
 
-def test_save_playlist_invalid_tracks_type(http_client):
+def test_save_playlist_invalid_tracks_type(auth_client):
     """Test POST /api/playlists with tracks as non-list returns 400."""
-    res = http_client.post("/api/playlists", json={"tracks": "not-a-list"})
+    res = auth_client.post("/api/playlists", json={"tracks": "not-a-list"})
     assert res.status_code == 400
     data = res.get_json()
     assert data["ok"] is False
 
 
-def test_save_playlist_no_body(http_client):
+def test_save_playlist_no_body(auth_client):
     """Test POST /api/playlists with no JSON body returns 400."""
-    res = http_client.post("/api/playlists", content_type="application/json", data="")
+    res = auth_client.post("/api/playlists", content_type="application/json", data="")
     assert res.status_code == 400
     assert res.get_json()["ok"] is False
 
 
-def test_save_playlist_fires_ml_events(http_client):
-    """Test POST /api/playlists with user_id fires best-effort events to ml-app."""
+def test_save_playlist_fires_ml_events(auth_client):
+    """Test POST /api/playlists fires best-effort events using the session user_id."""
     playlists_col.insert_one = MagicMock(return_value=MagicMock(inserted_id="pl-1"))
-    payload = {
-        "user_id": "user-123",
-        "tracks": [{"song_id": "s1"}, {"song_id": "s2"}],
-    }
+    payload = {"tracks": [{"song_id": "s1"}, {"song_id": "s2"}]}
     with patch("app.http.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=200)
-        res = http_client.post("/api/playlists", json=payload)
+        res = auth_client.post("/api/playlists", json=payload)
 
     assert res.status_code == 201
     assert mock_post.call_count == 2
@@ -203,12 +220,12 @@ def test_save_playlist_fires_ml_events(http_client):
     assert {"user_id": "user-123", "song_id": "s2", "event_type": "save"} in call_bodies
 
 
-def test_save_playlist_ml_unavailable_still_saves(http_client):
+def test_save_playlist_ml_unavailable_still_saves(auth_client):
     """Test POST /api/playlists still returns 201 when ml-app is unreachable."""
     playlists_col.insert_one = MagicMock(return_value=MagicMock(inserted_id="pl-2"))
-    payload = {"user_id": "user-123", "tracks": [{"song_id": "s1"}]}
+    payload = {"tracks": [{"song_id": "s1"}]}
     with patch("app.http.post", side_effect=requests.exceptions.ConnectionError):
-        res = http_client.post("/api/playlists", json=payload)
+        res = auth_client.post("/api/playlists", json=payload)
 
     assert res.status_code == 201
     assert res.get_json()["ok"] is True
@@ -219,35 +236,36 @@ def test_save_playlist_ml_unavailable_still_saves(http_client):
 # ---------------------------------------------------------------------------
 
 
-def test_get_playlists_no_filter(http_client):
-    """Test GET /api/playlists returns all playlists when no user_id given."""
+def test_get_playlists_unauthenticated(http_client):
+    """Test GET /api/playlists without a session returns 401."""
+    res = http_client.get("/api/playlists")
+    assert res.status_code == 401
+
+
+def test_get_playlists_returns_user_playlists(auth_client):
+    """Test GET /api/playlists returns only the session user's playlists."""
     oid = ObjectId()
     playlists_col.find = MagicMock(
         return_value=MagicMock(
             sort=lambda *_: MagicMock(
                 limit=lambda *_: [
-                    {"_id": oid, "user_id": "u1", "savedAt": "2024-01-01", "tracks": []}
+                    {
+                        "_id": oid,
+                        "user_id": "user-123",
+                        "savedAt": "2024-01-01",
+                        "tracks": [],
+                    }
                 ]
             )
         )
     )
 
-    res = http_client.get("/api/playlists")
+    res = auth_client.get("/api/playlists")
     assert res.status_code == 200
     data = res.get_json()
     assert len(data) == 1
     assert data[0]["id"] == str(oid)
     assert "_id" not in data[0]
-
-
-def test_get_playlists_filters_by_user(http_client):
-    """Test GET /api/playlists?user_id=X passes user filter to MongoDB."""
-    playlists_col.find = MagicMock(
-        return_value=MagicMock(sort=lambda *_: MagicMock(limit=lambda *_: []))
-    )
-
-    res = http_client.get("/api/playlists?user_id=user-123")
-    assert res.status_code == 200
     query_arg = playlists_col.find.call_args[0][0]
     assert query_arg == {"user_id": "user-123"}
 
