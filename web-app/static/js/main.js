@@ -1,4 +1,4 @@
-import { generatePlaylist, savePlaylist, recordEvent, getRecommendations } from './api.js';
+import { generatePlaylist, savePlaylist, recordEvent, getRecommendations, getPlaylists } from './api.js';
 
 const GENRES = ['Pop', 'Rock', 'Hip-Hop', 'R&B', 'Electronic', 'Indie', 'Jazz', 'Country', 'Latin', 'Folk', 'Metal', 'Classical'];
 const MOODS  = ['Happy', 'Sad', 'Energetic', 'Chill', 'Romantic', 'Aggressive', 'Melancholic', 'Party', 'Nostalgic', 'Motivational'];
@@ -38,6 +38,17 @@ const toast         = document.getElementById('toast');
 const recList       = document.getElementById('rec-list');
 const recSubtitle   = document.getElementById('rec-subtitle');
 const recRefreshBtn = document.getElementById('rec-refresh-btn');
+const pageLayout    = document.getElementById('page-layout');
+const showPlaylistsBtn = document.getElementById('show-playlists-btn');
+const savedScreen   = document.getElementById('saved-playlists-screen');
+const backToMainBtn = document.getElementById('back-to-main-btn');
+const savedMeta     = document.getElementById('saved-playlists-meta');
+const savedLoading  = document.getElementById('saved-playlists-loading');
+const savedEmpty    = document.getElementById('saved-playlists-empty');
+const savedList     = document.getElementById('saved-playlists-list');
+
+let savedPlaylistsCache = [];
+let mainScrollY = 0;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 function init() {
@@ -73,6 +84,9 @@ function init() {
   recRefreshBtn.addEventListener('click', () => loadRecommendations());
   form.addEventListener('submit', handleGenerate);
   saveBtn.addEventListener('click', handleSave);
+  if (showPlaylistsBtn) showPlaylistsBtn.addEventListener('click', showSavedPlaylists);
+  backToMainBtn.addEventListener('click', showMainPage);
+  savedList.addEventListener('click', handleSavedPlaylistAction);
   regenBtn.addEventListener('click', () => {
     resultsEl.style.display = 'none';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -201,6 +215,9 @@ async function handleSave() {
   if (result.ok) {
     showToast('Saved! Downloading CSV…');
     loadRecommendations();
+    if (savedScreen.style.display === 'block') {
+      loadSavedPlaylists();
+    }
     const a = document.createElement('a');
     a.href = `/api/playlists/${result.id}/csv`;
     a.download = '';
@@ -213,6 +230,116 @@ async function handleSave() {
   } else {
     showToast(result.message || 'Save failed.', true);
   }
+}
+
+// ── Saved playlists screen ───────────────────────────────────────────────────
+async function showSavedPlaylists() {
+  mainScrollY = window.scrollY;
+  pageLayout.style.display = 'none';
+  savedScreen.style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  await loadSavedPlaylists();
+}
+
+function showMainPage() {
+  savedScreen.style.display = 'none';
+  pageLayout.style.display = 'flex';
+  window.scrollTo({ top: mainScrollY, behavior: 'smooth' });
+}
+
+async function loadSavedPlaylists() {
+  savedLoading.style.display = 'block';
+  savedEmpty.style.display = 'none';
+  savedList.innerHTML = '';
+  savedMeta.textContent = 'MongoDB saved playlists for your account.';
+
+  try {
+    const data = await getPlaylists();
+    savedPlaylistsCache = data.playlists || [];
+    savedLoading.style.display = 'none';
+
+    if (!savedPlaylistsCache.length) {
+      savedEmpty.style.display = 'block';
+      savedMeta.textContent = 'No saved playlists yet.';
+      return;
+    }
+
+    savedMeta.textContent = `${savedPlaylistsCache.length} saved playlist${savedPlaylistsCache.length === 1 ? '' : 's'}`;
+    savedList.innerHTML = savedPlaylistsCache.map(renderSavedPlaylist).join('');
+  } catch (err) {
+    savedLoading.style.display = 'none';
+    savedEmpty.style.display = 'block';
+    savedEmpty.textContent = err.message || 'Could not load playlists.';
+    savedMeta.textContent = 'Could not load saved playlists.';
+  }
+}
+
+function renderSavedPlaylist(playlist, index) {
+  const tracks = Array.isArray(playlist.tracks) ? playlist.tracks : [];
+  const date = formatPlaylistDate(playlist.savedAt || playlist.createdAt);
+  const previewRows = tracks.slice(0, 5).map((track, i) => renderSavedTrack(track, i)).join('');
+  const extra = tracks.length > 5
+    ? `<p style="color:#666;font-size:.78rem;margin:8px 0 0 46px;">${tracks.length - 5} more track${tracks.length - 5 === 1 ? '' : 's'}</p>`
+    : '';
+
+  return `
+    <article style="background:#181818;border:1px solid #2a2a2a;border-radius:8px;padding:16px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px;">
+        <div style="min-width:0;">
+          <h2 style="font-size:1rem;font-weight:700;margin:0 0 3px;">${tracks.length} tracks</h2>
+          <p style="color:#888;font-size:.8rem;margin:0;">Saved ${escHtml(date)}</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+          <button type="button" data-open-playlist="${index}"
+                  style="background:#1DB954;color:#000;font-weight:600;border:none;border-radius:9999px;padding:7px 14px;font-size:.82rem;cursor:pointer;">
+            Open
+          </button>
+          <a href="/api/playlists/${encodeURIComponent(playlist.id)}/csv" download
+             style="background:#2a2a2a;color:#fff;border:1px solid #444;border-radius:9999px;padding:7px 14px;font-size:.82rem;text-decoration:none;">
+            CSV
+          </a>
+        </div>
+      </div>
+      <ol style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:2px;">
+        ${previewRows || '<li style="color:#666;font-size:.85rem;padding:10px 0;">No tracks stored in this playlist.</li>'}
+      </ol>
+      ${extra}
+    </article>`;
+}
+
+function renderSavedTrack(track, index) {
+  const colour = GENRE_COLOURS[index % GENRE_COLOURS.length];
+  const initials = (track.artist || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const moodStr = Array.isArray(track.mood) ? track.mood.slice(0, 2).join(', ') : track.mood || '';
+  return `
+    <li class="track-row">
+      <span style="color:#555;font-size:.8rem;width:22px;text-align:right;flex-shrink:0;">${index + 1}</span>
+      <div style="width:34px;height:34px;border-radius:6px;background:${colour};display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff;flex-shrink:0;">${escHtml(initials)}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(track.title || 'Untitled Track')}</div>
+        <div style="color:#888;font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(track.artist || 'Unknown Artist')}${moodStr ? ' · ' + escHtml(moodStr) : ''}</div>
+      </div>
+      ${track.genre ? `<span style="font-size:.7rem;background:#2a2a2a;border:1px solid #333;border-radius:4px;padding:2px 8px;color:#aaa;flex-shrink:0;">${escHtml(track.genre)}</span>` : ''}
+    </li>`;
+}
+
+function handleSavedPlaylistAction(e) {
+  const openBtn = e.target.closest('[data-open-playlist]');
+  if (!openBtn) return;
+
+  const playlist = savedPlaylistsCache[Number(openBtn.dataset.openPlaylist)];
+  if (!playlist) return;
+
+  state.playlist = Array.isArray(playlist.tracks) ? playlist.tracks : [];
+  showMainPage();
+  renderResults({ tracks: state.playlist, source: 'saved', size: state.playlist.length });
+}
+
+function formatPlaylistDate(value) {
+  if (!value) return 'recently';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 // ── Recommendations ───────────────────────────────────────────────────────────

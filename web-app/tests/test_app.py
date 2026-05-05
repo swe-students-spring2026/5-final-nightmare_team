@@ -1,6 +1,7 @@
 """Tests for the Flask web application."""
 
 # pylint: disable=redefined-outer-name
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -291,6 +292,63 @@ def test_save_playlist_ml_unavailable_still_saves(auth_client):
 
     assert res.status_code == 201
     assert res.get_json()["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# GET /api/playlists
+# ---------------------------------------------------------------------------
+
+
+def test_get_playlists_requires_login(http_client):
+    """Test GET /api/playlists returns 401 when not logged in."""
+    res = http_client.get("/api/playlists")
+    assert res.status_code == 401
+
+
+def test_get_playlists_returns_current_user_playlists(auth_client):
+    """Test GET /api/playlists returns saved playlists with JSON-safe dates."""
+
+    class FakeCursor:
+        """Small cursor double that supports the sort/limit chain."""
+
+        def __init__(self, docs):
+            self.docs = docs
+
+        def sort(self, *_args):
+            """Return self to support Mongo cursor chaining."""
+            return self
+
+        def limit(self, *_args):
+            """Return self to support Mongo cursor chaining."""
+            return self
+
+        def __iter__(self):
+            """Iterate over the fake playlist documents."""
+            return iter(self.docs)
+
+    saved_at = datetime(2026, 5, 5, 12, 0, tzinfo=timezone.utc)
+    playlists_col.find = MagicMock(
+        return_value=FakeCursor(
+            [
+                {
+                    "_id": "playlist-1",
+                    "savedAt": saved_at,
+                    "createdAt": saved_at,
+                    "tracks": [{"song_id": "s1", "title": "Test Track"}],
+                }
+            ]
+        )
+    )
+
+    res = auth_client.get("/api/playlists")
+
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["ok"] is True
+    assert data["playlists"][0]["id"] == "playlist-1"
+    assert data["playlists"][0]["savedAt"] == saved_at.isoformat()
+    assert data["playlists"][0]["tracks"][0]["title"] == "Test Track"
+    playlists_col.find.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

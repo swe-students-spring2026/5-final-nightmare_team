@@ -244,6 +244,8 @@ def get_playlists():
         doc["id"] = str(doc.pop("_id"))
         if isinstance(doc.get("createdAt"), datetime):
             doc["createdAt"] = doc["createdAt"].isoformat()
+        if isinstance(doc.get("savedAt"), datetime):
+            doc["savedAt"] = doc["savedAt"].isoformat()
     return jsonify({"ok": True, "playlists": docs}), 200
 
 
