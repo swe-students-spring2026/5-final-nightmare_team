@@ -6,6 +6,7 @@ import os
 
 from pymongo import ASCENDING, MongoClient
 from pymongo.database import Database
+from pymongo.errors import OperationFailure
 
 _client: MongoClient | None = None  # pylint: disable=invalid-name
 
@@ -18,12 +19,21 @@ def get_db() -> Database:
     return _client["webapp"]
 
 
+def _create_index_safe(collection, keys, **kwargs) -> None:
+    """Create an index, dropping and recreating it if the definition has changed."""
+    try:
+        collection.create_index(keys, **kwargs)
+    except OperationFailure:
+        collection.drop_indexes()
+        collection.create_index(keys, **kwargs)
+
+
 def init_db() -> None:
     """Create indexes on the recommender collections."""
     db = get_db()
-    db["users"].create_index([("user_id", ASCENDING)], unique=True)
-    db["songs"].create_index([("song_id", ASCENDING)], unique=True)
-    db["events"].create_index([("user_id", ASCENDING), ("song_id", ASCENDING)])
+    _create_index_safe(db["users"], [("user_id", ASCENDING)], unique=True)
+    _create_index_safe(db["songs"], [("song_id", ASCENDING)], unique=True)
+    _create_index_safe(db["events"], [("user_id", ASCENDING), ("song_id", ASCENDING)])
 
 
 def reset_db() -> None:

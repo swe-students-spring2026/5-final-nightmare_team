@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
+import pandas as pd
+
+from pymongo.errors import PyMongoError
+
 from app.database import get_db, reset_db
 from app.models import EVENT_WEIGHTS
 
@@ -55,7 +62,13 @@ def seed() -> None:
 
     for song_id, title, artist, genre in SONGS:
         db["songs"].insert_one(
-            {"song_id": song_id, "title": title, "artist": artist, "genre": genre}
+            {
+                "song_id": song_id,
+                "title": title,
+                "artist": artist,
+                "genre": genre,
+                "tags": None,
+            }
         )
 
     for user_id, song_id, event_type in EVENTS:
@@ -67,6 +80,56 @@ def seed() -> None:
                 "weight": EVENT_WEIGHTS[event_type],
             }
         )
+
+
+def _make_song_id(artist: str, track_name: str) -> str:
+    raw = f"{artist.lower()}::{track_name.lower()}"
+    return "lfm-" + hashlib.md5(raw.encode()).hexdigest()[:12]
+
+
+def load_lastfm_songs(limit: int = 2000, csv_path: str | None = None) -> int:
+    """
+    Load top-`limit` songs from the Last.fm dataset into the songs table.
+
+    Rows are ranked by tag_count descending (more tags = more well-known tracks),
+    then avg_rank ascending (lower rank value = higher chart position).
+    Returns the number of new rows inserted.
+    """
+    if csv_path is None:
+        csv_path = str(Path(__file__).parent / "lastfm_tracks.csv")
+
+    df = pd.read_csv(csv_path, dtype=str)
+    df = df[df["tags"].notna() & (df["tags"].str.strip() != "")].copy()
+    df["tag_count"] = pd.to_numeric(df["tag_count"], errors="coerce").fillna(0)
+    df["avg_rank"] = pd.to_numeric(df["avg_rank"], errors="coerce").fillna(999)
+    df = df.sort_values(["tag_count", "avg_rank"], ascending=[False, True]).head(limit)
+
+    inserted = 0
+    for _, row in df.iterrows():
+        song_id = _make_song_id(str(row["artist"]), str(row["track_name"]))
+        title = str(row["track_name"])
+        artist = str(row["artist"])
+        tags = str(row["tags"])
+        genre = tags.split("|")[0].strip() if tags else None
+
+        try:
+            db = get_db()
+            existing = db["songs"].find_one({"song_id": song_id})
+            if existing is None:
+                db["songs"].insert_one(
+                    {
+                        "song_id": song_id,
+                        "title": title,
+                        "artist": artist,
+                        "genre": genre,
+                        "tags": tags,
+                    }
+                )
+                inserted += 1
+        except PyMongoError:
+            pass
+
+    return inserted
 
 
 if __name__ == "__main__":

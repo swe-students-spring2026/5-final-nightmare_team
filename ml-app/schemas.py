@@ -38,6 +38,7 @@ class SongCreate(BaseModel):
     title: str = Field(..., min_length=1)
     artist: str = Field(..., min_length=1)
     genre: str | None = None
+    tags: str | None = None
 
 
 class SongResponse(BaseModel):
@@ -47,6 +48,7 @@ class SongResponse(BaseModel):
     title: str
     artist: str
     genre: str | None = None
+    tags: str | None = None
 
 
 class EventCreate(BaseModel):
@@ -101,3 +103,12 @@ class TrainResponse(BaseModel):
     users: int
     songs: int
     events: int
+    content_trained: bool = False
+
+
+class LastFMSeedResponse(BaseModel):
+    """Response model for the Last.fm seed endpoint."""
+
+    status: str
+    songs_inserted: int
+    content_trained: bool

@@ -11,11 +11,13 @@ from pymongo.errors import DuplicateKeyError
 
 from app import database
 from app.models import EVENT_WEIGHTS, MOCK_SONGS
-from app.recommender import ItemBasedRecommender, NotEnoughDataError
+from app.recommender import HybridRecommender, NotEnoughDataError
+from app.seed import load_lastfm_songs
 from app.schemas import (
     EventCreate,
     EventResponse,
     HealthResponse,
+    LastFMSeedResponse,
     RecommendationItem,
     RecommendationResponse,
     SimilarSongsResponse,
@@ -26,7 +28,7 @@ from app.schemas import (
     UserResponse,
 )
 
-recommender = ItemBasedRecommender()
+recommender = HybridRecommender()
 
 
 @asynccontextmanager
@@ -38,8 +40,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Music Recommendation API",
-    description="Collaborative-filtering song recommendation backend.",
-    version="1.0.0",
+    description="Hybrid collaborative-filtering + content-based song recommendation backend.",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -72,6 +74,7 @@ def create_song(song: SongCreate) -> SongResponse:
                 "title": song.title,
                 "artist": song.artist,
                 "genre": song.genre,
+                "tags": song.tags,
             }
         )
     except DuplicateKeyError as exc:
@@ -194,6 +197,32 @@ def train() -> TrainResponse:
         users=len(users),
         songs=len(songs),
         events=len(events),
+        content_trained=recommender.cb.trained,
+    )
+
+
+@app.post("/seed/lastfm", response_model=LastFMSeedResponse)
+def seed_lastfm(
+    limit: int = Query(default=2000, ge=100, le=10000),
+) -> LastFMSeedResponse:
+    """
+    Populate the songs table from the bundled Last.fm dataset and immediately
+    train the content-based (tag-similarity) model. No user events required.
+    """
+    inserted = load_lastfm_songs(limit=limit)
+
+    db = database.get_db()
+    songs = pd.DataFrame(list(db["songs"].find({}, {"_id": 0})))
+    if not songs.empty and "tags" in songs.columns:
+        try:
+            recommender.fit_content(songs)
+        except NotEnoughDataError:
+            pass
+
+    return LastFMSeedResponse(
+        status="seeded",
+        songs_inserted=inserted,
+        content_trained=recommender.cb.trained,
     )
 
 
