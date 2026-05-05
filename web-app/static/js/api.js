@@ -31,6 +31,18 @@ export async function getRecommendations(userId, k = 10) {
 }
 
 /**
+ * @returns {Promise<{ ok: boolean, playlists: object[] }>}
+ */
+export async function getPlaylists() {
+  const res = await fetch('/api/playlists');
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || `Playlists unavailable (${res.status})`);
+  }
+  return data;
+}
+
+/**
  * @param {string} songId
  * @param {'like'|'dislike'} eventType
  * @returns {Promise<{ ok: boolean }>}

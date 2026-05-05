@@ -13,6 +13,9 @@
     input[type=range] { accent-color:#1DB954; cursor:pointer; }
     #page-layout { display:flex; gap:28px; max-width:1060px; margin:0 auto; padding:40px 20px 100px; align-items:flex-start; }
     #rec-sidebar { width:260px; flex-shrink:0; position:sticky; top:64px; }
+    #saved-playlists-screen { display:none; max-width:980px; margin:0 auto; padding:40px 20px 100px; }
+    .track-row { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:8px; transition:background .15s; }
+    .track-row:hover { background:#1e1e1e; }
     @media (max-width:820px) {
       #page-layout { flex-direction:column-reverse; }
       #rec-sidebar { width:100%; position:static; }
@@ -27,6 +30,10 @@
     <div style="display:flex;align-items:center;gap:16px;font-size:.875rem;">
       {% if current_user %}
         <span style="color:#888;">{{ current_user.name }}</span>
+        <button id="show-playlists-btn" type="button" style="background:#1e1e1e;border:1px solid #333;color:#fff;border-radius:9999px;padding:7px 14px;font-size:.85rem;cursor:pointer;transition:border-color .15s;"
+                onmouseover="this.style.borderColor='#1DB954'" onmouseout="this.style.borderColor='#333'">
+          Show Playlists
+        </button>
         <a href="/logout" style="color:#888;text-decoration:none;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#888'">Sign out</a>
       {% else %}
         <a href="/login" style="color:#888;text-decoration:none;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#888'">Sign in</a>
@@ -147,6 +154,25 @@
     </aside>
 
   </div><!-- /page-layout -->
+
+  <section id="saved-playlists-screen" aria-live="polite">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:28px;">
+      <div>
+        <h1 style="font-size:1.875rem;font-weight:700;margin:0 0 4px;">Saved Playlists</h1>
+        <p id="saved-playlists-meta" style="color:#888;font-size:.875rem;margin:0;">MongoDB saved playlists for your account.</p>
+      </div>
+      <button id="back-to-main-btn" type="button"
+              style="background:#2a2a2a;color:#fff;border:1px solid #444;border-radius:9999px;padding:9px 18px;font-size:.875rem;cursor:pointer;transition:background .15s;flex-shrink:0;"
+              onmouseover="this.style.background='#333'" onmouseout="this.style.background='#2a2a2a'">
+        Back
+      </button>
+    </div>
+    <div id="saved-playlists-loading" style="color:#555;font-size:.9rem;text-align:center;padding:36px 0;">Loading…</div>
+    <div id="saved-playlists-empty" style="display:none;color:#888;font-size:.9rem;text-align:center;padding:36px 0;border:1px solid #2a2a2a;border-radius:8px;background:#181818;">
+      No saved playlists yet.
+    </div>
+    <div id="saved-playlists-list" style="display:flex;flex-direction:column;gap:18px;"></div>
+  </section>
 
   <!-- Toast -->
   <div id="toast" style="position:fixed;bottom:24px;right:24px;background:#1e1e1e;border:1px solid #333;color:#fff;font-size:.875rem;border-radius:12px;padding:12px 20px;box-shadow:0 8px 32px rgba(0,0,0,.6);transform:translateY(16px);opacity:0;transition:all .3s;pointer-events:none;z-index:50;max-width:320px;"></div>
