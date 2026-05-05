@@ -464,15 +464,13 @@ def spotify_save_playlist():
             f"[spotify] verify failed: /me={me_resp.status_code} /playlists={pl_resp.status_code}"
         )
 
-    # TEMP: test with single track only
-    uris = uris[:1]
     # Add URIs in batches of 100 (Spotify API limit)
     print(f"[spotify] adding {len(uris)} URIs, sample: {uris[:2]}")
     for i in range(0, len(uris), 100):
         batch = uris[i : i + 100]
         try:
             add_resp = http.post(
-                f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+                f"https://api.spotify.com/v1/playlists/{playlist_id}/items",
                 headers=auth_header,
                 params={"uris": ",".join(batch)},
                 timeout=10,
