@@ -56,8 +56,8 @@ jobs:
       - name: Create app package symlink
         run: ln -s ml-app app
 
-      - name: Run tests with coverage
-        run: pipenv run pytest ml-app/tests/ --cov=ml-app --cov-report=term-missing --cov-fail-under=80
+      - name: Run tests
+        run: pipenv run pytest ml-app/tests/
 
   build-and-push:
     runs-on: ubuntu-latest

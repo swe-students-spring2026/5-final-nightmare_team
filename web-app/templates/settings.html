@@ -234,6 +234,36 @@
           </div>
         </section>
 
+        <!-- ── Saved Playlists ──────────────────────────────────────────── -->
+        <section class="bg-spotify-surface rounded-xl p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-spotify-green/10 flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4 text-spotify-green fill-current" viewBox="0 0 24 24">
+                  <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+                </svg>
+              </div>
+              <h2 class="text-base font-semibold">Saved Playlists</h2>
+            </div>
+            <span id="playlistCount" class="text-xs text-spotify-subtle"></span>
+          </div>
+
+          <!-- Loading skeleton -->
+          <div id="playlistsLoading" class="space-y-2.5">
+            <div class="h-14 bg-spotify-card rounded-lg animate-pulse"></div>
+            <div class="h-14 bg-spotify-card rounded-lg animate-pulse opacity-70"></div>
+            <div class="h-14 bg-spotify-card rounded-lg animate-pulse opacity-40"></div>
+          </div>
+
+          <!-- Playlist list -->
+          <ul id="playlistsList" class="hidden space-y-2"></ul>
+
+          <!-- Empty state -->
+          <p id="playlistsEmpty" class="hidden text-sm text-spotify-subtle text-center py-4">
+            No saved playlists yet. Generate one and hit Save!
+          </p>
+        </section>
+
         <!-- ── Integration Hub ───────────────────────────────────────────── -->
         <section class="bg-spotify-surface rounded-xl p-6 space-y-4">
           <div class="flex items-center gap-3">
