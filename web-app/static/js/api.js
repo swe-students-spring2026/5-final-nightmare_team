@@ -82,30 +82,31 @@ export function generatePlaylist(params) {
 }
 
 /**
- * @param {string|null} userId - Filter playlists by this user. Pass null for all.
  * @returns {Promise<Array>}
  */
-export function fetchPlaylists(userId) {
-  const url = userId
-    ? `/api/playlists?user_id=${encodeURIComponent(userId)}`
-    : '/api/playlists';
-  return fetch(url)
-    .then((res) => res.json())
-    .catch(() => []);
+export async function fetchPlaylists() {
+  try {
+    const res = await fetch('/api/playlists');
+    return await res.json();
+  } catch {
+    return [];
+  }
 }
 
 /**
  * @param {Array} tracks - The playlist to persist.
- * @param {string|null} userId - The display name / user identifier from settings.
  * @param {string|null} name - User-supplied playlist name.
  * @returns {Promise<{ok: boolean, message: string}>}
  */
-export function savePlaylist(tracks, userId, name) {
-  return fetch('/api/playlists', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ tracks, savedAt: new Date().toISOString(), user_id: userId || null, name: name || null }),
-  })
-    .then((res) => res.json())
-    .catch(() => ({ ok: false, message: 'Network error — could not reach the server.' }));
+export async function savePlaylist(tracks, name) {
+  try {
+    const res = await fetch('/api/playlists', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ tracks, savedAt: new Date().toISOString(), name: name || null }),
+    });
+    return await res.json();
+  } catch {
+    return { ok: false, message: 'Network error — could not reach the server.' };
+  }
 }

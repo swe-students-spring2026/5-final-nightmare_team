@@ -180,14 +180,21 @@ def get_recommendations(user_id):
         )
 
 
+def _session_user_id():
+    """Return the logged-in user's id from the session, or None."""
+    return session.get("auth_user", {}).get("id") or None
+
+
 @app.route("/api/playlists", methods=["GET"])
 def get_playlists():
-    """Retrieve saved playlists from MongoDB, newest first."""
-    user_id = request.args.get("user_id")
-    query = {"user_id": user_id} if user_id else {}
+    """Retrieve the current user's saved playlists from MongoDB, newest first."""
+    user_id = _session_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
     docs = list(
         playlists_col.find(
-            query, {"_id": 1, "user_id": 1, "name": 1, "savedAt": 1, "tracks": 1}
+            {"user_id": user_id},
+            {"_id": 1, "user_id": 1, "name": 1, "savedAt": 1, "tracks": 1},
         )
         .sort("createdAt", -1)
         .limit(50)
@@ -200,12 +207,16 @@ def get_playlists():
 @app.route("/api/playlists", methods=["POST"])
 def save_playlist():
     """Save a generated playlist to MongoDB and record save events in ml-app."""
+    user_id = _session_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "message": "Authentication required"}), 401
+
     data = request.get_json(silent=True)
     if not data or not isinstance(data.get("tracks"), list):
         return jsonify({"ok": False, "message": "Invalid payload"}), 400
 
     doc = {
-        "user_id": data.get("user_id") or None,
+        "user_id": user_id,
         "name": data.get("name") or None,
         "tracks": data["tracks"],
         "savedAt": data.get("savedAt", datetime.now(timezone.utc).isoformat()),
@@ -213,23 +224,21 @@ def save_playlist():
     }
     result = playlists_col.insert_one(doc)
 
-    user_id = data.get("user_id")
-    if user_id:
-        for track in data["tracks"]:
-            song_id = track.get("song_id") if isinstance(track, dict) else None
-            if song_id:
-                try:
-                    http.post(
-                        f"{ML_APP_URL}/events",
-                        json={
-                            "user_id": user_id,
-                            "song_id": song_id,
-                            "event_type": "save",
-                        },
-                        timeout=3,
-                    )
-                except http.exceptions.RequestException:
-                    pass  # best-effort: don't fail the save if ml-app is unreachable
+    for track in data["tracks"]:
+        song_id = track.get("song_id") if isinstance(track, dict) else None
+        if song_id:
+            try:
+                http.post(
+                    f"{ML_APP_URL}/events",
+                    json={
+                        "user_id": user_id,
+                        "song_id": song_id,
+                        "event_type": "save",
+                    },
+                    timeout=3,
+                )
+            except http.exceptions.RequestException:
+                pass  # best-effort: don't fail the save if ml-app is unreachable
 
     return jsonify({"ok": True, "id": str(result.inserted_id)}), 201
 

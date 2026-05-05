@@ -18,6 +18,12 @@ const COVER_COLOURS = [
 
 let currentPlaylist = [];
 
+/** Returns the logged-in user's MongoDB _id, or null if not signed in. */
+function getCurrentUserId() {
+  const id = document.querySelector('meta[name="current-user-id"]')?.content;
+  return id || null;
+}
+
 // ── DOM refs ───────────────────────────────────────────────────────────────
 
 const form            = document.getElementById('generatorForm');
@@ -232,6 +238,10 @@ const SAVE_BTN_HTML = `
 
 saveBtn.addEventListener('click', () => {
   if (!currentPlaylist.length) return;
+  if (!getCurrentUserId()) {
+    window.location.href = '/login';
+    return;
+  }
   playlistNameInput.value = '';
   namePlaylistModal.classList.remove('hidden');
   playlistNameInput.focus();
@@ -263,11 +273,7 @@ confirmSaveBtn.addEventListener('click', async () => {
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving…';
 
-  let userId = null;
-  try {
-    const s = JSON.parse(localStorage.getItem('vibelist_settings') || '{}');
-    userId = s.displayName || s.email || null;
-  } catch { /* ignore parse errors */ }
+  const userId = getCurrentUserId();
 
   const result = await savePlaylist(currentPlaylist, userId, name);
 
@@ -471,20 +477,26 @@ function renderPlaylistCards() {
 playlistsSort.addEventListener('change', renderPlaylistCards);
 
 async function loadSavedPlaylists() {
+  if (!getCurrentUserId()) {
+    window.location.href = '/login';
+    return;
+  }
+
   playlistsListView.classList.remove('hidden');
   playlistDetailView.classList.add('hidden');
   playlistsList.innerHTML = '';
   playlistsEmpty.classList.add('hidden');
   playlistsLoading.classList.remove('hidden');
 
-  let userId = null;
-  try {
-    const s = JSON.parse(localStorage.getItem('vibelist_settings') || '{}');
-    userId = s.displayName || s.email || null;
-  } catch { /* ignore */ }
-
-  cachedPlaylists = await fetchPlaylists(userId);
+  const data = await fetchPlaylists();
   playlistsLoading.classList.add('hidden');
+
+  if (data?.error === 'Authentication required') {
+    window.location.href = '/login';
+    return;
+  }
+
+  cachedPlaylists = Array.isArray(data) ? data : [];
   renderPlaylistCards();
 }
 
