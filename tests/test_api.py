@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 
 import pytest
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture()
@@ -18,15 +17,17 @@ def client(monkeypatch):
     importlib.reload(main)
     database.reset_db()
     main.recommender = ItemBasedRecommender()
+    main._db_initialized = True  # DB already initialised by reset_db above
 
-    with TestClient(main.app) as test_client:
+    main.app.config["TESTING"] = True
+    with main.app.test_client() as test_client:
         yield test_client
 
 
-def seed_minimal(client: TestClient) -> None:
+def seed_minimal(client) -> None:
     for user_id in ["u1", "u2", "u3"]:
-        response = client.post("/users", json={"user_id": user_id, "name": user_id.upper()})
-        assert response.status_code == 201
+        res = client.post("/users", json={"user_id": user_id, "name": user_id.upper()})
+        assert res.status_code == 201
 
     songs = [
         {"song_id": "s1", "title": "Midnight City", "artist": "M83", "genre": "Electronic"},
@@ -35,8 +36,8 @@ def seed_minimal(client: TestClient) -> None:
         {"song_id": "s4", "title": "Redbone", "artist": "Childish Gambino", "genre": "R&B"},
     ]
     for song in songs:
-        response = client.post("/songs", json=song)
-        assert response.status_code == 201
+        res = client.post("/songs", json=song)
+        assert res.status_code == 201
 
     events = [
         {"user_id": "u1", "song_id": "s1", "event_type": "like"},
@@ -47,72 +48,103 @@ def seed_minimal(client: TestClient) -> None:
         {"user_id": "u3", "song_id": "s4", "event_type": "repeat"},
     ]
     for event in events:
-        response = client.post("/events", json=event)
-        assert response.status_code == 201
+        res = client.post("/events", json=event)
+        assert res.status_code == 201
 
 
-def test_health(client: TestClient) -> None:
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+def test_health(client) -> None:
+    res = client.get("/health")
+    assert res.status_code == 200
+    assert res.get_json() == {"status": "ok"}
 
 
-def test_mock_recommendations_before_training(client: TestClient) -> None:
-    response = client.post("/users", json={"user_id": "u1", "name": "Avery"})
-    assert response.status_code == 201
+def test_mock_recommendations_before_training(client) -> None:
+    client.post("/users", json={"user_id": "u1", "name": "Avery"})
 
-    response = client.get("/recommendations/u1?k=2")
-    assert response.status_code == 200
-    body = response.json()
+    res = client.get("/recommendations/u1?k=2")
+    assert res.status_code == 200
+    body = res.get_json()
     assert body["source"] == "mock"
     assert body["user_id"] == "u1"
     assert len(body["recommendations"]) == 2
 
 
-def test_records_event_and_rejects_unknown_song(client: TestClient) -> None:
+def test_records_event_and_rejects_unknown_song(client) -> None:
     client.post("/users", json={"user_id": "u1"})
-    response = client.post(
+    res = client.post(
         "/events",
         json={"user_id": "u1", "song_id": "missing", "event_type": "like"},
     )
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Unknown song."
+    assert res.status_code == 404
+    assert res.get_json()["error"] == "Unknown song."
 
 
-def test_rejects_unsupported_event_type(client: TestClient) -> None:
+def test_rejects_unsupported_event_type(client) -> None:
     client.post("/users", json={"user_id": "u1"})
     client.post("/songs", json={"song_id": "s1", "title": "One", "artist": "Artist"})
 
-    response = client.post(
+    res = client.post(
         "/events",
         json={"user_id": "u1", "song_id": "s1", "event_type": "dance"},
     )
-    assert response.status_code == 422
+    assert res.status_code == 400
 
 
-def test_train_and_get_model_recommendations(client: TestClient) -> None:
+def test_train_and_get_model_recommendations(client) -> None:
     seed_minimal(client)
 
-    train_response = client.post("/train")
-    assert train_response.status_code == 200
-    assert train_response.json()["source"] == "model"
+    train_res = client.post("/train")
+    assert train_res.status_code == 200
+    assert train_res.get_json()["source"] == "model"
 
-    rec_response = client.get("/recommendations/u1?k=2")
-    assert rec_response.status_code == 200
-    rec_body = rec_response.json()
-    assert rec_body["source"] == "model"
-    assert rec_body["recommendations"]
-    assert all(item["song_id"] not in {"s1", "s2"} for item in rec_body["recommendations"])
+    rec_res = client.get("/recommendations/u1?k=2")
+    assert rec_res.status_code == 200
+    body = rec_res.get_json()
+    assert body["source"] == "model"
+    assert body["recommendations"]
+    assert all(item["song_id"] not in {"s1", "s2"} for item in body["recommendations"])
 
 
-def test_train_and_get_similar_songs(client: TestClient) -> None:
+def test_train_and_get_similar_songs(client) -> None:
     seed_minimal(client)
     assert client.post("/train").status_code == 200
 
-    response = client.get("/songs/s1/similar?k=2")
-    assert response.status_code == 200
-    body = response.json()
+    res = client.get("/songs/s1/similar?k=2")
+    assert res.status_code == 200
+    body = res.get_json()
     assert body["source"] == "model"
     assert body["song_id"] == "s1"
     assert body["similar"]
     assert all(item["song_id"] != "s1" for item in body["similar"])
+
+
+def test_generate_playlist_by_tags(client) -> None:
+    seed_minimal(client)
+
+    res = client.post(
+        "/generate-playlist",
+        json={"tags": ["rock"], "size": 2},
+    )
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["source"] == "tags"
+    assert len(body["tracks"]) == 2
+    assert all("title" in t and "artist" in t for t in body["tracks"])
+
+
+def test_generate_playlist_by_seed(client) -> None:
+    seed_minimal(client)
+
+    res = client.post(
+        "/generate-playlist",
+        json={"seed_songs": ["M83"], "size": 2},
+    )
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["source"] == "seeds"
+    assert body["tracks"][0]["artist"] == "M83"
+
+
+def test_generate_playlist_empty_db(client) -> None:
+    res = client.post("/generate-playlist", json={"tags": ["pop"], "size": 5})
+    assert res.status_code == 404

@@ -1,329 +1,333 @@
-import { generatePlaylist, savePlaylist } from './api.js';
+import { generatePlaylist, savePlaylist, recordEvent, getRecommendations } from './api.js';
 
-// ── Constants ──────────────────────────────────────────────────────────────
+const GENRES = ['Pop', 'Rock', 'Hip-Hop', 'R&B', 'Electronic', 'Indie', 'Jazz', 'Country', 'Latin', 'Folk', 'Metal', 'Classical'];
+const MOODS  = ['Happy', 'Sad', 'Energetic', 'Chill', 'Romantic', 'Aggressive', 'Melancholic', 'Party', 'Nostalgic', 'Motivational'];
+const ERAS   = ['Any', '60s', '70s', '80s', '90s', '00s', '10s', '20s'];
 
-const GENRES = [
-  'Pop', 'Rock', 'Hip-Hop', 'R&B', 'Electronic',
-  'Indie', 'Jazz', 'Classical', 'Metal', 'Folk',
-  'Soul', 'Lo-fi', 'Punk', 'Reggae', 'Country',
-];
+const GENRE_COLOURS = ['#e91e63','#9c27b0','#3f51b5','#009688','#ff9800','#795548','#607d8b','#e53935','#00897b','#1e88e5','#6d4c41','#546e7a'];
 
-// Unique SVG paths used for placeholder album art colours
-const COVER_COLOURS = [
-  '#1DB954', '#E91429', '#509BF5', '#FF6437',
-  '#AF2896', '#2D46B9', '#8D67AB', '#006450',
-];
+const state = {
+  seedSongs: [],
+  genres: new Set(),
+  moods: new Set(),
+  era: 'any',
+  size: 20,
+  playlist: [],
+};
 
-// ── State ──────────────────────────────────────────────────────────────────
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const form        = document.getElementById('generator-form');
+const seedInput   = document.getElementById('seed-input');
+const seedAddBtn  = document.getElementById('seed-add-btn');
+const seedChips   = document.getElementById('seed-chips');
+const genreChips  = document.getElementById('genre-chips');
+const moodChips   = document.getElementById('mood-chips');
+const eraChips    = document.getElementById('era-chips');
+const sizeSlider  = document.getElementById('size-slider');
+const sizeDisplay = document.getElementById('size-display');
+const errorMsg    = document.getElementById('error-msg');
+const generateBtn = document.getElementById('generate-btn');
+const btnLabel    = document.getElementById('btn-label');
+const btnSpinner  = document.getElementById('btn-spinner');
+const resultsEl   = document.getElementById('results');
+const resultsMeta = document.getElementById('results-meta');
+const trackList   = document.getElementById('track-list');
+const saveBtn       = document.getElementById('save-btn');
+const regenBtn      = document.getElementById('regen-btn');
+const toast         = document.getElementById('toast');
+const recList       = document.getElementById('rec-list');
+const recSubtitle   = document.getElementById('rec-subtitle');
+const recRefreshBtn = document.getElementById('rec-refresh-btn');
 
-let currentPlaylist = [];
+// ── Init ──────────────────────────────────────────────────────────────────────
+function init() {
+  renderTagGroup(genreChips, GENRES, state.genres);
+  renderTagGroup(moodChips, MOODS, state.moods);
+  renderEraGroup();
 
-// ── DOM refs ───────────────────────────────────────────────────────────────
+  sizeSlider.addEventListener('input', () => {
+    state.size = +sizeSlider.value;
+    sizeDisplay.textContent = state.size;
+  });
 
-const form            = document.getElementById('generatorForm');
-const generateBtn     = document.getElementById('generateBtn');
-const btnLabel        = document.getElementById('btnLabel');
-const btnSpinner      = document.getElementById('btnSpinner');
-const genreGrid       = document.getElementById('genreGrid');
-const sizeSlider      = document.getElementById('playlistSize');
-const sizeDisplay     = document.getElementById('sizeDisplay');
-const resultsSection  = document.getElementById('resultsSection');
-const trackList       = document.getElementById('trackList');
-const trackCount      = document.getElementById('trackCount');
-const saveBtn         = document.getElementById('saveBtn');
-const regenerateBtn   = document.getElementById('regenerateBtn');
-const saveToast       = document.getElementById('saveToast');
-const formError       = document.getElementById('formError');
-const healthBtn       = document.getElementById('healthBtn');
-const healthDot       = document.getElementById('healthDot');
-const healthLabel     = document.getElementById('healthLabel');
-const menuToggle      = document.getElementById('menuToggle');
-const sidebar         = document.getElementById('sidebar');
-const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+  seedInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addSeedSong(); }
+  });
+  seedAddBtn.addEventListener('click', addSeedSong);
 
-// ── Initialise genres ──────────────────────────────────────────────────────
+  genreChips.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-tag]');
+    if (btn) toggleTag(state.genres, btn.dataset.tag, genreChips);
+  });
+  moodChips.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-tag]');
+    if (btn) toggleTag(state.moods, btn.dataset.tag, moodChips);
+  });
+  eraChips.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-era]');
+    if (btn) selectEra(btn.dataset.era);
+  });
 
-function initGenres() {
-  genreGrid.innerHTML = GENRES.map((g) => `
-    <label class="genre-chip cursor-pointer select-none">
-      <input type="checkbox" name="genres" value="${g}" class="sr-only" />
-      <span class="inline-block px-4 py-1.5 rounded-full border border-spotify-card
-                   text-sm text-spotify-subtle transition-all duration-150
-                   hover:border-white hover:text-white">
-        ${g}
-      </span>
-    </label>
-  `).join('');
+  trackList.addEventListener('click', handleTrackEvent);
+  recList.addEventListener('click', handleAddRec);
+  recRefreshBtn.addEventListener('click', () => loadRecommendations());
+  form.addEventListener('submit', handleGenerate);
+  saveBtn.addEventListener('click', handleSave);
+  regenBtn.addEventListener('click', () => {
+    resultsEl.style.display = 'none';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  loadRecommendations();
 }
 
-// ── Range slider live value ────────────────────────────────────────────────
-
-sizeSlider.addEventListener('input', () => {
-  sizeDisplay.textContent = `${sizeSlider.value} tracks`;
-});
-
-// ── Mobile sidebar toggle ──────────────────────────────────────────────────
-
-function openSidebar() {
-  sidebar.classList.remove('-translate-x-full');
-  sidebarBackdrop.classList.remove('hidden');
+// ── Seed songs ────────────────────────────────────────────────────────────────
+function addSeedSong() {
+  const val = seedInput.value.trim();
+  if (!val || state.seedSongs.includes(val)) { seedInput.value = ''; return; }
+  state.seedSongs.push(val);
+  seedInput.value = '';
+  renderSeedChips();
 }
 
-function closeSidebar() {
-  sidebar.classList.add('-translate-x-full');
-  sidebarBackdrop.classList.add('hidden');
+function renderSeedChips() {
+  seedChips.innerHTML = state.seedSongs.map((s, i) =>
+    `<span style="display:inline-flex;align-items:center;gap:6px;background:#2a2a2a;border:1px solid #444;border-radius:9999px;padding:4px 12px;font-size:.8125rem;color:#fff;">
+      ${escHtml(s)}
+      <button type="button" data-idx="${i}" style="background:none;border:none;color:#888;cursor:pointer;font-size:.9rem;line-height:1;padding:0;">×</button>
+    </span>`
+  ).join('');
+  seedChips.querySelectorAll('[data-idx]').forEach(btn => {
+    btn.addEventListener('click', () => { state.seedSongs.splice(+btn.dataset.idx, 1); renderSeedChips(); });
+  });
 }
 
-menuToggle.addEventListener('click', openSidebar);
-sidebarBackdrop.addEventListener('click', closeSidebar);
+// ── Tag chips ─────────────────────────────────────────────────────────────────
+function renderTagGroup(container, items, selectedSet) {
+  container.innerHTML = items.map(item =>
+    `<button type="button" class="chip ${selectedSet.has(item.toLowerCase()) ? 'chip-on' : 'chip-off'}" data-tag="${item.toLowerCase()}">${item}</button>`
+  ).join('');
+}
 
-// ── Generate form submit ───────────────────────────────────────────────────
+function toggleTag(set, value, container) {
+  if (set.has(value)) set.delete(value); else set.add(value);
+  container.querySelectorAll('[data-tag]').forEach(btn => {
+    btn.className = `chip ${set.has(btn.dataset.tag) ? 'chip-on' : 'chip-off'}`;
+  });
+}
 
-form.addEventListener('submit', async (e) => {
+// ── Era ───────────────────────────────────────────────────────────────────────
+function renderEraGroup() {
+  eraChips.innerHTML = ERAS.map(era =>
+    `<button type="button" class="chip ${state.era === era.toLowerCase() ? 'chip-on' : 'chip-off'}" data-era="${era.toLowerCase()}">${era}</button>`
+  ).join('');
+}
+
+function selectEra(val) {
+  state.era = val;
+  eraChips.querySelectorAll('[data-era]').forEach(btn => {
+    btn.className = `chip ${state.era === btn.dataset.era ? 'chip-on' : 'chip-off'}`;
+  });
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+async function handleGenerate(e) {
   e.preventDefault();
-  clearError();
-
-  const vibe = document.getElementById('vibe').value.trim();
-  if (!vibe) {
-    showError('Please describe your vibe before generating.');
+  const allTags = [
+    ...state.genres,
+    ...state.moods,
+    ...(state.era !== 'any' ? [state.era] : []),
+  ];
+  if (allTags.length === 0 && state.seedSongs.length === 0) {
+    showError('Pick at least one genre, mood, era, or seed song.');
     return;
   }
-
-  const selectedGenres = [...document.querySelectorAll('input[name="genres"]:checked')]
-    .map((cb) => cb.value);
-
-  const params = {
-    vibe,
-    genres:      selectedGenres,
-    size:        sizeSlider.value,
-    era:         document.getElementById('era').value.trim(),
-    seedArtists: document.getElementById('seedArtists').value.trim(),
-  };
-
+  clearError();
   setLoading(true);
-
   try {
-    const tracks = await generatePlaylist(params);
-    currentPlaylist = tracks;
-    renderPlaylist(tracks);
-    resetForm();
+    const data = await generatePlaylist({ tags: allTags, seedSongs: state.seedSongs, size: state.size });
+    state.playlist = data.tracks;
+    renderResults(data);
   } catch (err) {
-    showError('Something went wrong generating your playlist. Please try again.');
+    showError(err.message || 'Failed to generate playlist. Is the ml-app running?');
   } finally {
     setLoading(false);
   }
-});
+}
 
-// ── Render playlist ────────────────────────────────────────────────────────
+function renderResults(data) {
+  const labels = { tags: 'tag-based', seeds: 'seed-based', mixed: 'mixed', random: 'random' };
+  resultsMeta.textContent = `${data.size} songs · ${labels[data.source] || data.source}`;
 
-/**
- * Injects track cards into #trackList and reveals the results section.
- * @param {Array<{id: number, title: string, artist: string, duration: string}>} tracks
- */
-function renderPlaylist(tracks) {
-  trackCount.textContent = `${tracks.length} tracks`;
-  hideToast();
-
-  trackList.innerHTML = tracks.map((track, index) => {
-    const colour = COVER_COLOURS[index % COVER_COLOURS.length];
-    const initials = track.artist.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  trackList.innerHTML = data.tracks.map((track, i) => {
+    const colour = GENRE_COLOURS[i % GENRE_COLOURS.length];
+    const initials = (track.artist || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const moodStr = (track.mood || []).slice(0, 2).join(', ');
+    const sid = escHtml(track.song_id || '');
     return `
-      <article class="track-card flex items-center gap-4 bg-spotify-surface hover:bg-spotify-card
-                       rounded-lg px-4 py-3 group transition-colors duration-150"
-               data-id="${track.id}">
-
-        <!-- Index / play hover -->
-        <div class="w-8 text-center shrink-0">
-          <span class="track-num text-spotify-subtle text-sm group-hover:hidden">${index + 1}</span>
-          <button class="play-btn hidden group-hover:flex items-center justify-center
-                         text-white hover:text-spotify-green transition-colors"
-                  aria-label="Play ${track.title}">
-            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-          </button>
+      <li style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;transition:background .15s;"
+          onmouseover="this.style.background='#1e1e1e'" onmouseout="this.style.background='transparent'">
+        <span style="color:#555;font-size:.8rem;width:22px;text-align:right;flex-shrink:0;">${i + 1}</span>
+        <div style="width:40px;height:40px;border-radius:6px;background:${colour};display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;">${initials}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(track.title)}</div>
+          <div style="color:#888;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(track.artist)}${moodStr ? ' · ' + escHtml(moodStr) : ''}</div>
         </div>
-
-        <!-- Cover art -->
-        <div class="w-10 h-10 rounded shrink-0 flex items-center justify-center
-                    text-xs font-bold text-white"
-             style="background-color: ${colour}88; border: 1px solid ${colour}44;">
-          ${initials}
+        ${track.genre ? `<span style="font-size:.7rem;background:#2a2a2a;border:1px solid #333;border-radius:4px;padding:2px 8px;color:#aaa;flex-shrink:0;">${escHtml(track.genre)}</span>` : ''}
+        ${track.era  ? `<span style="font-size:.7rem;color:#555;flex-shrink:0;">${escHtml(track.era)}</span>` : ''}
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button data-song="${sid}" data-event="like"
+                  style="background:none;border:1px solid #333;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:.85rem;color:#888;transition:all .15s;"
+                  title="Like">👍</button>
+          <button data-song="${sid}" data-event="dislike"
+                  style="background:none;border:1px solid #333;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:.85rem;color:#888;transition:all .15s;"
+                  title="Dislike">👎</button>
         </div>
-
-        <!-- Title & artist -->
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-semibold truncate">${escapeHtml(track.title)}</p>
-          <p class="text-xs text-spotify-subtle truncate">${escapeHtml(track.artist)}</p>
-        </div>
-
-        <!-- Duration -->
-        <span class="text-spotify-subtle text-xs shrink-0 mr-2">${track.duration}</span>
-
-        <!-- Add button -->
-        <button class="add-track shrink-0 w-7 h-7 rounded-full border border-spotify-subtle
-                       flex items-center justify-center opacity-0 group-hover:opacity-100
-                       hover:border-white hover:text-white transition-all duration-150"
-                aria-label="Add ${escapeHtml(track.title)} to library"
-                data-id="${track.id}">
-          <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-          </svg>
-        </button>
-      </article>
-    `;
+      </li>`;
   }).join('');
 
-  // Delegate "add" button clicks
-  trackList.addEventListener('click', onTrackAction, { once: true });
-
-  resultsSection.classList.remove('hidden');
-  resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  resultsEl.style.display = 'block';
+  resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ── Track action delegation ────────────────────────────────────────────────
+// ── Save ──────────────────────────────────────────────────────────────────────
+async function handleSave() {
+  if (!state.playlist.length) return;
+  saveBtn.disabled = true;
+  const result = await savePlaylist(state.playlist, window.CURRENT_USER?.id || null);
+  saveBtn.disabled = false;
+  if (result.ok) {
+    showToast('Playlist saved!');
+    loadRecommendations();
+  } else if (result.status === 401 || result.message?.includes('Sign in')) {
+    showToast('Sign in to save playlists.', true);
+    setTimeout(() => { window.location.href = '/login'; }, 1500);
+  } else {
+    showToast(result.message || 'Save failed.', true);
+  }
+}
 
-function onTrackAction(e) {
-  const addBtn = e.target.closest('.add-track');
-  if (!addBtn) {
-    // re-attach since we used { once }
-    trackList.addEventListener('click', onTrackAction, { once: true });
+// ── Recommendations ───────────────────────────────────────────────────────────
+async function loadRecommendations() {
+  const userId = window.CURRENT_USER?.id;
+  if (!userId) return;
+  recList.innerHTML = '<p style="color:#555;font-size:.8rem;text-align:center;padding:12px 0;">Loading…</p>';
+  try {
+    const data = await getRecommendations(userId, 10);
+    renderRecommendations(data);
+  } catch {
+    recList.innerHTML = '<p style="color:#555;font-size:.8rem;text-align:center;padding:12px 0;">Unavailable</p>';
+  }
+}
+
+function renderRecommendations(data) {
+  const isMock = data.source === 'mock';
+  recSubtitle.textContent = isMock
+    ? 'Like or save songs to personalise'
+    : 'Based on your likes & saves';
+
+  if (!data.recommendations?.length) {
+    recList.innerHTML = '<p style="color:#555;font-size:.8rem;text-align:center;padding:12px 0;">No recommendations yet</p>';
     return;
   }
-  const id   = Number(addBtn.dataset.id);
-  const card = addBtn.closest('.track-card');
-  addBtn.innerHTML = `
-    <svg class="w-3.5 h-3.5 fill-current text-spotify-green" viewBox="0 0 24 24">
-      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-    </svg>`;
-  addBtn.classList.add('border-spotify-green', 'opacity-100');
-  addBtn.disabled = true;
-  card.classList.add('ring-1', 'ring-spotify-green/30');
 
-  // re-attach for other tracks
-  trackList.addEventListener('click', onTrackAction, { once: true });
+  recList.innerHTML = data.recommendations.map((track, i) => {
+    const colour = GENRE_COLOURS[i % GENRE_COLOURS.length];
+    const initials = (track.artist || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const inPlaylist = state.playlist.some(t => t.song_id === track.song_id);
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2a2a2a;">
+        <div style="width:32px;height:32px;border-radius:5px;background:${colour};display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:#fff;flex-shrink:0;">${initials}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:.8rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(track.title)}</div>
+          <div style="font-size:.73rem;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(track.artist)}</div>
+          <div style="font-size:.7rem;color:#1DB954;margin-top:1px;">score ${track.score.toFixed(2)}</div>
+        </div>
+        <button data-rec='${JSON.stringify({ song_id: track.song_id, title: track.title, artist: track.artist, genre: track.genre || null, mood: [], era: null, score: track.score })}'
+                ${inPlaylist ? 'disabled' : ''}
+                style="background:none;border:1px solid ${inPlaylist ? '#2a2a2a' : '#444'};color:${inPlaylist ? '#333' : '#aaa'};border-radius:6px;width:28px;height:28px;cursor:${inPlaylist ? 'default' : 'pointer'};font-size:1rem;flex-shrink:0;transition:all .15s;"
+                ${inPlaylist ? '' : 'onmouseover="this.style.borderColor=\'#1DB954\';this.style.color=\'#1DB954\'" onmouseout="this.style.borderColor=\'#444\';this.style.color=\'#aaa\'"'}
+                title="${inPlaylist ? 'Already in playlist' : 'Add to playlist'}">
+          ${inPlaylist ? '✓' : '+'}
+        </button>
+      </div>`;
+  }).join('');
 }
 
-// ── Save to MongoDB ────────────────────────────────────────────────────────
+function handleAddRec(e) {
+  const btn = e.target.closest('[data-rec]');
+  if (!btn || btn.disabled) return;
+  const track = JSON.parse(btn.dataset.rec);
+  if (state.playlist.some(t => t.song_id === track.song_id)) return;
 
-saveBtn.addEventListener('click', async () => {
-  if (!currentPlaylist.length) return;
+  state.playlist.push(track);
+  renderResults({ tracks: state.playlist, source: 'mixed', size: state.playlist.length });
+  resultsEl.style.display = 'block';
 
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Saving…';
+  // Mark button as added
+  btn.disabled = true;
+  btn.textContent = '✓';
+  btn.style.borderColor = '#2a2a2a';
+  btn.style.color = '#333';
+  btn.style.cursor = 'default';
+  btn.onmouseover = null;
+  btn.onmouseout = null;
 
-  let userId = null;
-  try {
-    const s = JSON.parse(localStorage.getItem('vibelist_settings') || '{}');
-    userId = s.displayName || s.email || null;
-  } catch { /* ignore parse errors */ }
+  showToast(`"${escHtml(track.title)}" added to playlist`);
+}
 
-  const result = await savePlaylist(currentPlaylist, userId);
+// ── Track events ──────────────────────────────────────────────────────────────
+async function handleTrackEvent(e) {
+  const btn = e.target.closest('[data-event]');
+  if (!btn) return;
+  const songId = btn.dataset.song;
+  const eventType = btn.dataset.event;
+  if (!songId) return;
 
-  saveBtn.disabled = false;
-  saveBtn.innerHTML = `
-    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
-      <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0
-               2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3
-               3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
-    </svg>
-    Save to MongoDB`;
+  btn.disabled = true;
+  const result = await recordEvent(songId, eventType);
 
-  showToast(
-    result?.ok === false
-      ? `Error: ${result.message}`
-      : 'Playlist saved to MongoDB!',
-    result?.ok === false ? 'error' : 'success',
-  );
-});
-
-// ── Regenerate ─────────────────────────────────────────────────────────────
-
-regenerateBtn.addEventListener('click', () => {
-  resultsSection.classList.add('hidden');
-  currentPlaylist = [];
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-});
-
-// ── DB Health check ────────────────────────────────────────────────────────
-
-healthBtn.addEventListener('click', async () => {
-  healthLabel.textContent = 'Checking…';
-  healthDot.className = 'w-2 h-2 rounded-full bg-yellow-400 animate-pulse';
-  try {
-    const res  = await fetch('/health');
-    const data = await res.json();
-    if (data.status === 'ok') {
-      healthDot.className  = 'w-2 h-2 rounded-full bg-spotify-green';
-      healthLabel.textContent = 'DB Connected';
-    } else {
-      throw new Error(data.mongo);
-    }
-  } catch {
-    healthDot.className  = 'w-2 h-2 rounded-full bg-red-500';
-    healthLabel.textContent = 'DB Unreachable';
-  }
-});
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function setLoading(loading) {
-  generateBtn.disabled = loading;
-  if (loading) {
-    btnLabel.textContent = 'Generating…';
-    btnSpinner.classList.remove('hidden');
-    generateBtn.classList.add('opacity-80', 'cursor-not-allowed');
+  if (result.ok) {
+    const isLike = eventType === 'like';
+    btn.style.background = isLike ? 'rgba(29,185,84,.15)' : 'rgba(239,68,68,.15)';
+    btn.style.borderColor = isLike ? '#1DB954' : '#ef4444';
+    btn.style.color = isLike ? '#1DB954' : '#ef4444';
+    const sibling = btn.parentElement.querySelector(`[data-event="${isLike ? 'dislike' : 'like'}"]`);
+    if (sibling) sibling.disabled = true;
+    loadRecommendations();
   } else {
-    btnLabel.textContent = 'Generate Playlist';
-    btnSpinner.classList.add('hidden');
-    generateBtn.classList.remove('opacity-80', 'cursor-not-allowed');
+    btn.disabled = false;
   }
 }
 
-function resetForm() {
-  document.getElementById('vibe').value        = '';
-  document.getElementById('era').value         = '';
-  document.getElementById('seedArtists').value = '';
-  sizeSlider.value    = 20;
-  sizeDisplay.textContent = '20 tracks';
-  document.querySelectorAll('input[name="genres"]:checked')
-    .forEach((cb) => { cb.checked = false; });
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function setLoading(on) {
+  generateBtn.disabled = on;
+  btnLabel.textContent = on ? 'Generating…' : 'Generate Playlist';
+  btnSpinner.style.display = on ? 'block' : 'none';
+  generateBtn.style.opacity = on ? '.7' : '1';
 }
 
-function showError(msg) {
-  formError.textContent = msg;
-  formError.classList.remove('hidden');
+function showError(msg) { errorMsg.textContent = msg; errorMsg.style.display = 'block'; }
+function clearError()   { errorMsg.style.display = 'none'; }
+
+let toastTimer;
+function showToast(msg, isError = false) {
+  toast.textContent = msg;
+  toast.style.borderColor = isError ? '#ef4444' : '#1DB954';
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+  toast.style.pointerEvents = 'auto';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(16px)';
+    toast.style.pointerEvents = 'none';
+  }, 3000);
 }
 
-function clearError() {
-  formError.textContent = '';
-  formError.classList.add('hidden');
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function showToast(msg, type = 'success') {
-  saveToast.textContent = msg;
-  saveToast.className = [
-    'mt-4 px-4 py-3 rounded-lg text-sm font-medium',
-    type === 'success'
-      ? 'bg-green-900/60 border border-spotify-green text-green-300'
-      : 'bg-red-900/60 border border-red-500 text-red-300',
-  ].join(' ');
-  saveToast.classList.remove('hidden');
-}
-
-function hideToast() {
-  saveToast.classList.add('hidden');
-}
-
-/** Prevent XSS when injecting user-derived data into innerHTML. */
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// ── Boot ───────────────────────────────────────────────────────────────────
-
-initGenres();
+init();

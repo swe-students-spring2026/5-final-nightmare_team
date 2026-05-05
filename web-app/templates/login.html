@@ -3,203 +3,126 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login | Playlist Generator</title>
+  <title>VibeList</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            spotify: {
-              green:   '#1DB954',
-              black:   '#121212',
-              surface: '#181818',
-              card:    '#282828',
-              subtle:  '#B3B3B3',
-            }
-          }
-        }
-      }
-    }
-  </script>
-  <style>
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #535353; border-radius: 3px; }
-    .auth-toggle[aria-expanded="true"] .toggle-label {
-      color: #ffffff;
-    }
-  </style>
 </head>
-<body class="min-h-screen bg-spotify-black text-white font-sans">
-  <div class="min-h-screen flex flex-col">
-    <header class="px-6 py-5 border-b border-spotify-card bg-black/70 backdrop-blur">
-      <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
-        <a href="/" class="flex items-center gap-2">
-          <svg class="w-8 h-8 text-spotify-green fill-current" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477
-                     10-10S17.523 2 12 2zm4.586 14.424a.622.622 0 0
-                     1-.857.207c-2.348-1.435-5.304-1.76-8.785-.964a.623.623
-                     0 0 1-.277-1.215c3.809-.87 7.076-.496 9.713 1.115a.623.623
-                     0 0 1 .206.857zm1.223-2.722a.78.78 0 0
-                     1-1.072.257c-2.687-1.652-6.785-2.131-9.965-1.166a.78.78
-                     0 1 1-.453-1.492c3.633-1.103 8.147-.569
-                     11.233 1.329a.78.78 0 0 1 .257 1.072zm.105-2.835C14.692
-                     8.95 9.375 8.775 6.297 9.71a.937.937 0 1
-                     1-.543-1.792c3.532-1.072 9.404-.865
-                     13.115 1.338a.937.937 0 0 1-.955 1.611z"/>
-          </svg>
-          <span class="text-xl font-bold tracking-tight">Vibe<span class="text-spotify-green">List</span></span>
-        </a>
-      </div>
-    </header>
+<body style="background:#121212;color:#fff;min-height:100vh;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;">
 
-    <main class="flex-1 px-6 py-10">
-      <div class="mx-auto flex max-w-xl justify-center">
-        <section class="w-full rounded-3xl bg-spotify-surface border border-spotify-card p-6 sm:p-8">
-          <div class="mb-6">
-            <p class="text-sm font-semibold text-spotify-green uppercase tracking-[0.2em]">Login</p>
-          </div>
+  <div style="width:100%;max-width:400px;">
 
-          {% if auth_error %}
-            <div class="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-              {{ auth_error }}
+    <!-- Logo -->
+    <div style="text-align:center;margin-bottom:32px;">
+      <span style="font-size:1.75rem;font-weight:700;color:#1DB954;letter-spacing:-.5px;">VibeList</span>
+      <p style="color:#888;font-size:.875rem;margin-top:6px;">Your personal playlist generator</p>
+    </div>
+
+    <!-- Card -->
+    <div style="background:#1e1e1e;border:1px solid #333;border-radius:16px;padding:28px;">
+
+      {% if auth_error %}
+        <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px 14px;font-size:.875rem;color:#fca5a5;margin-bottom:20px;">
+          {{ auth_error }}
+        </div>
+      {% endif %}
+
+      {% if auth_success %}
+        <div style="background:rgba(29,185,84,.1);border:1px solid rgba(29,185,84,.3);border-radius:8px;padding:10px 14px;font-size:.875rem;color:#86efac;margin-bottom:20px;">
+          {{ auth_success }}
+        </div>
+      {% endif %}
+
+      {% if current_user %}
+        <!-- Already signed in -->
+        <p style="font-size:.8rem;color:#1DB954;font-weight:600;text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;">Signed in</p>
+        <p style="font-size:1.1rem;font-weight:700;margin-bottom:4px;">{{ current_user.name }}</p>
+        <p style="color:#888;font-size:.875rem;margin-bottom:20px;">{{ current_user.email }}</p>
+        <div style="display:flex;gap:10px;">
+          <a href="/" style="flex:1;background:#1DB954;color:#000;font-weight:700;border:none;border-radius:9999px;padding:12px;font-size:.875rem;text-align:center;text-decoration:none;display:block;">Go to app</a>
+          <a href="/logout" style="flex:1;background:transparent;color:#fff;font-weight:600;border:1px solid #444;border-radius:9999px;padding:12px;font-size:.875rem;text-align:center;text-decoration:none;display:block;">Sign out</a>
+        </div>
+
+      {% else %}
+        <!-- Tabs -->
+        <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid #333;">
+          <button id="tab-login" onclick="showTab('login')"
+                  style="flex:1;padding:10px;font-size:.9rem;font-weight:600;background:none;border:none;color:#1DB954;border-bottom:2px solid #1DB954;cursor:pointer;">
+            Sign In
+          </button>
+          <button id="tab-register" onclick="showTab('register')"
+                  style="flex:1;padding:10px;font-size:.9rem;font-weight:600;background:none;border:none;color:#888;border-bottom:2px solid transparent;cursor:pointer;">
+            Create Account
+          </button>
+        </div>
+
+        <!-- Sign In form -->
+        <div id="panel-login">
+          <form method="post" action="/login">
+            <div style="margin-bottom:16px;">
+              <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:6px;">Email</label>
+              <input name="email" type="email" value="{{ login_email }}" placeholder="you@example.com"
+                     style="width:100%;background:#2a2a2a;border:1px solid #444;border-radius:8px;padding:10px 14px;font-size:.875rem;color:#fff;outline:none;box-sizing:border-box;"
+                     onfocus="this.style.borderColor='#1DB954'" onblur="this.style.borderColor='#444'" />
             </div>
-          {% endif %}
-
-          {% if auth_success %}
-            <div class="mb-5 rounded-2xl border border-spotify-green/30 bg-spotify-green/10 px-4 py-3 text-sm text-green-100">
-              {{ auth_success }}
+            <div style="margin-bottom:24px;">
+              <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:6px;">Password</label>
+              <input name="password" type="password" placeholder="Your password"
+                     style="width:100%;background:#2a2a2a;border:1px solid #444;border-radius:8px;padding:10px 14px;font-size:.875rem;color:#fff;outline:none;box-sizing:border-box;"
+                     onfocus="this.style.borderColor='#1DB954'" onblur="this.style.borderColor='#444'" />
             </div>
-          {% endif %}
+            <button type="submit"
+                    style="width:100%;background:#1DB954;color:#000;font-weight:700;border:none;border-radius:9999px;padding:13px;font-size:.9rem;cursor:pointer;">
+              Sign In
+            </button>
+          </form>
+        </div>
 
-          {% if current_user %}
-            <section class="mb-6 rounded-3xl border border-spotify-green/30 bg-black/20 p-5">
-              <div class="flex items-start justify-between gap-4">
-                <div class="flex items-center gap-4">
-                  <div class="flex h-14 w-14 items-center justify-center rounded-full border border-spotify-card bg-spotify-card text-lg font-bold text-spotify-green">
-                    {{ current_user.name[:1] }}
-                  </div>
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-spotify-green">Signed In</p>
-                    <h3 class="mt-1 text-xl font-bold">{{ current_user.name }}</h3>
-                    <p class="mt-1 text-sm text-spotify-subtle">{{ current_user.email }}</p>
-                  </div>
-                </div>
-                <a
-                  href="/logout"
-                  class="rounded-full border border-spotify-card px-4 py-2 text-sm font-semibold text-spotify-subtle transition-colors hover:border-spotify-green hover:text-white"
-                >
-                  Log Out
-                </a>
-              </div>
-            </section>
-          {% else %}
-            <form method="post" action="/login" class="space-y-5" aria-label="Login form">
-              <div class="space-y-2">
-                <label for="email" class="block text-sm font-semibold">Email</label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value="{{ login_email }}"
-                  placeholder="you@example.com"
-                  class="w-full rounded-lg border border-transparent bg-spotify-card px-4 py-3 text-sm text-white placeholder-spotify-subtle transition-colors focus:border-spotify-green focus:outline-none"
-                />
-              </div>
-
-              <div class="space-y-2">
-                <label for="password" class="block text-sm font-semibold">Password</label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  class="w-full rounded-lg border border-transparent bg-spotify-card px-4 py-3 text-sm text-white placeholder-spotify-subtle transition-colors focus:border-spotify-green focus:outline-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                class="flex w-full items-center justify-center gap-3 rounded-full bg-spotify-green py-4 text-sm font-bold uppercase tracking-widest text-black transition-all duration-150 hover:bg-green-400 active:scale-95"
-              >
-                Sign In
-              </button>
-            </form>
-
-            <div class="my-6 flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-spotify-subtle">
-              <span class="h-px flex-1 bg-spotify-card"></span>
-              <button
-                type="button"
-                id="createAccountToggle"
-                class="auth-toggle underline underline-offset-4 transition-colors hover:text-white"
-                aria-expanded="false"
-                aria-controls="createAccountPanel"
-              >
-                <span class="toggle-label">Create Account</span>
-              </button>
-              <span class="h-px flex-1 bg-spotify-card"></span>
+        <!-- Create Account form -->
+        <div id="panel-register" style="display:none;">
+          <form method="post" action="/register">
+            <div style="margin-bottom:16px;">
+              <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:6px;">Name</label>
+              <input name="name" type="text" placeholder="Your name"
+                     style="width:100%;background:#2a2a2a;border:1px solid #444;border-radius:8px;padding:10px 14px;font-size:.875rem;color:#fff;outline:none;box-sizing:border-box;"
+                     onfocus="this.style.borderColor='#1DB954'" onblur="this.style.borderColor='#444'" />
             </div>
-
-            <div id="createAccountPanel" class="hidden">
-              <form method="post" action="/register" class="space-y-5" aria-label="Create account form">
-                <div class="space-y-2">
-                  <label for="name" class="block text-sm font-semibold">Display Name</label>
-                  <input
-                    id="name"
-                    name="name"
-                    type="text"
-                    placeholder="e.g. Alex Rivera"
-                    class="w-full rounded-lg border border-transparent bg-spotify-card px-4 py-3 text-sm text-white placeholder-spotify-subtle transition-colors focus:border-spotify-green focus:outline-none"
-                  />
-                </div>
-
-                <div class="space-y-2">
-                  <label for="registerEmail" class="block text-sm font-semibold">Email</label>
-                  <input
-                    id="registerEmail"
-                    name="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    class="w-full rounded-lg border border-transparent bg-spotify-card px-4 py-3 text-sm text-white placeholder-spotify-subtle transition-colors focus:border-spotify-green focus:outline-none"
-                  />
-                </div>
-
-                <div class="space-y-2">
-                  <label for="registerPassword" class="block text-sm font-semibold">Password</label>
-                  <input
-                    id="registerPassword"
-                    name="password"
-                    type="password"
-                    placeholder="At least 8 characters"
-                    class="w-full rounded-lg border border-transparent bg-spotify-card px-4 py-3 text-sm text-white placeholder-spotify-subtle transition-colors focus:border-spotify-green focus:outline-none"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  class="flex w-full items-center justify-center gap-3 rounded-full border border-spotify-card bg-transparent py-4 text-sm font-semibold text-white transition-colors hover:border-spotify-green hover:text-spotify-green"
-                >
-                  Create Account
-                </button>
-              </form>
+            <div style="margin-bottom:16px;">
+              <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:6px;">Email</label>
+              <input name="email" type="email" placeholder="you@example.com"
+                     style="width:100%;background:#2a2a2a;border:1px solid #444;border-radius:8px;padding:10px 14px;font-size:.875rem;color:#fff;outline:none;box-sizing:border-box;"
+                     onfocus="this.style.borderColor='#1DB954'" onblur="this.style.borderColor='#444'" />
             </div>
-          {% endif %}
-        </section>
-      </div>
-    </main>
+            <div style="margin-bottom:24px;">
+              <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:6px;">Password <span style="color:#888;font-weight:400;">(min 8 characters)</span></label>
+              <input name="password" type="password" placeholder="At least 8 characters"
+                     style="width:100%;background:#2a2a2a;border:1px solid #444;border-radius:8px;padding:10px 14px;font-size:.875rem;color:#fff;outline:none;box-sizing:border-box;"
+                     onfocus="this.style.borderColor='#1DB954'" onblur="this.style.borderColor='#444'" />
+            </div>
+            <button type="submit"
+                    style="width:100%;background:#1DB954;color:#000;font-weight:700;border:none;border-radius:9999px;padding:13px;font-size:.9rem;cursor:pointer;">
+              Create Account
+            </button>
+          </form>
+        </div>
+
+      {% endif %}
+    </div>
   </div>
-  <script>
-    const createAccountToggle = document.getElementById('createAccountToggle');
-    const createAccountPanel = document.getElementById('createAccountPanel');
 
-    if (createAccountToggle && createAccountPanel) {
-      createAccountToggle.addEventListener('click', () => {
-        const isExpanded = createAccountToggle.getAttribute('aria-expanded') === 'true';
-        createAccountToggle.setAttribute('aria-expanded', String(!isExpanded));
-        createAccountPanel.classList.toggle('hidden', isExpanded);
-      });
+  <script>
+    function showTab(tab) {
+      const isLogin = tab === 'login';
+      document.getElementById('panel-login').style.display    = isLogin ? 'block' : 'none';
+      document.getElementById('panel-register').style.display = isLogin ? 'none'  : 'block';
+      document.getElementById('tab-login').style.color        = isLogin ? '#1DB954' : '#888';
+      document.getElementById('tab-login').style.borderBottomColor    = isLogin ? '#1DB954' : 'transparent';
+      document.getElementById('tab-register').style.color     = isLogin ? '#888' : '#1DB954';
+      document.getElementById('tab-register').style.borderBottomColor = isLogin ? 'transparent' : '#1DB954';
     }
+
+    // If there was a register error, open the register tab
+    {% if request.args.get('error') in ['missing_register_fields', 'user_exists', 'weak_password'] %}
+      showTab('register');
+    {% endif %}
   </script>
 </body>
 </html>

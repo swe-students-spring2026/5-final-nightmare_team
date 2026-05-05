@@ -19,8 +19,17 @@ def http_client():
         yield test_client
 
 
-def test_index(http_client):
-    """Test that the index route returns 200."""
+def test_index_redirects_when_logged_out(http_client):
+    """Test that the index route redirects unauthenticated users to login."""
+    res = http_client.get("/")
+    assert res.status_code == 302
+    assert "/login" in res.headers["Location"]
+
+
+def test_index_accessible_when_logged_in(http_client):
+    """Test that the index route renders for authenticated users."""
+    with http_client.session_transaction() as sess:
+        sess["auth_user"] = {"id": "u1", "name": "Tester", "email": "t@t.com"}
     res = http_client.get("/")
     assert res.status_code == 200
 
@@ -146,8 +155,16 @@ def test_health_error(http_client):
     assert data["status"] == "error"
 
 
+def test_save_playlist_requires_login(http_client):
+    """Test POST /api/playlists returns 401 when not logged in."""
+    res = http_client.post("/api/playlists", json={"tracks": []})
+    assert res.status_code == 401
+
+
 def test_save_playlist_valid(http_client):
     """Test POST /api/playlists with a valid payload returns 201."""
+    with http_client.session_transaction() as sess:
+        sess["auth_user"] = {"id": "u1", "name": "Tester", "email": "t@t.com"}
     payload = {
         "tracks": [
             {"id": 1, "title": "Test Track", "artist": "Artist", "duration": "3:00"}
@@ -162,6 +179,8 @@ def test_save_playlist_valid(http_client):
 
 def test_save_playlist_missing_tracks(http_client):
     """Test POST /api/playlists with no tracks key returns 400."""
+    with http_client.session_transaction() as sess:
+        sess["auth_user"] = {"id": "u1", "name": "Tester", "email": "t@t.com"}
     res = http_client.post("/api/playlists", json={})
     assert res.status_code == 400
     data = res.get_json()
@@ -170,6 +189,8 @@ def test_save_playlist_missing_tracks(http_client):
 
 def test_save_playlist_invalid_tracks_type(http_client):
     """Test POST /api/playlists with tracks as non-list returns 400."""
+    with http_client.session_transaction() as sess:
+        sess["auth_user"] = {"id": "u1", "name": "Tester", "email": "t@t.com"}
     res = http_client.post("/api/playlists", json={"tracks": "not-a-list"})
     assert res.status_code == 400
     data = res.get_json()

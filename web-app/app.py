@@ -5,12 +5,11 @@ from datetime import datetime, timezone
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 import requests as http
-from flask import Flask, jsonify, render_template, request
 from pymongo import MongoClient
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key")
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY") or "dev-secret-key"
 
 MONGO_URI = os.environ.get("MONGO_URI", "")
 ML_APP_URL = os.environ.get("ML_APP_URL", "http://ml-app:8000")
@@ -59,10 +58,32 @@ def build_session_user(user_doc):
     }
 
 
+def _sync_ml_user(user_id, name):
+    """Create the user in ml-app if they don't already exist (best-effort)."""
+    try:
+        http.post(
+            f"{ML_APP_URL}/users",
+            json={"user_id": user_id, "name": name},
+            timeout=3,
+        )
+    except http.exceptions.RequestException:
+        pass
+
+
+def _trigger_train():
+    """Ask ml-app to retrain the CF model (best-effort, fire-and-forget)."""
+    try:
+        http.post(f"{ML_APP_URL}/train", timeout=30)
+    except http.exceptions.RequestException:
+        pass
+
+
 @app.route("/")
 def index():
     """Render the main page."""
-    return render_template("index.html")
+    if not session.get("auth_user"):
+        return redirect(url_for("login"))
+    return render_template("index.html", current_user=session.get("auth_user"))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -82,6 +103,7 @@ def login():
             return redirect(url_for("login", error="invalid_credentials", email=email))
 
         session["auth_user"] = build_session_user(user_doc)
+        _sync_ml_user(str(user_doc["_id"]), user_doc.get("name", ""))
         return redirect(url_for("index"))
 
     return render_template(
@@ -118,6 +140,7 @@ def register():
     result = users_col.insert_one(user_doc)
     user_doc["_id"] = result.inserted_id
     session["auth_user"] = build_session_user(user_doc)
+    _sync_ml_user(str(result.inserted_id), name)
     return redirect(url_for("index"))
 
 
@@ -166,40 +189,91 @@ def get_recommendations(user_id):
         )
 
 
+@app.route("/api/events", methods=["POST"])
+def api_record_event():
+    """Record a like or dislike event for a track and retrain the CF model."""
+    if not session.get("auth_user"):
+        return jsonify({"ok": False, "message": "Sign in required."}), 401
+    data = request.get_json(silent=True) or {}
+    user = session["auth_user"]
+    _sync_ml_user(user["id"], user.get("name", ""))
+    try:
+        resp = http.post(
+            f"{ML_APP_URL}/events",
+            json={
+                "user_id": user["id"],
+                "song_id": data.get("song_id"),
+                "event_type": data.get("event_type"),
+            },
+            timeout=3,
+        )
+        if resp.status_code == 201:
+            _trigger_train()
+        return jsonify(resp.json()), resp.status_code
+    except http.exceptions.RequestException as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
 @app.route("/api/playlists", methods=["POST"])
 def save_playlist():
     """Save a generated playlist to MongoDB and record save events in ml-app."""
+    if not session.get("auth_user"):
+        return jsonify({"ok": False, "message": "Sign in to save playlists."}), 401
     data = request.get_json(silent=True)
     if not data or not isinstance(data.get("tracks"), list):
         return jsonify({"ok": False, "message": "Invalid payload"}), 400
 
+    user = session["auth_user"]
+    user_id = user["id"]
+
     doc = {
-        "user_id": data.get("user_id") or None,
+        "user_id": user_id,
         "tracks": data["tracks"],
         "savedAt": data.get("savedAt", datetime.now(timezone.utc).isoformat()),
         "createdAt": datetime.now(timezone.utc),
     }
     result = playlists_col.insert_one(doc)
 
-    user_id = data.get("user_id")
-    if user_id:
-        for track in data["tracks"]:
-            song_id = track.get("song_id") if isinstance(track, dict) else None
-            if song_id:
-                try:
-                    http.post(
-                        f"{ML_APP_URL}/events",
-                        json={
-                            "user_id": user_id,
-                            "song_id": song_id,
-                            "event_type": "save",
-                        },
-                        timeout=3,
-                    )
-                except http.exceptions.RequestException:
-                    pass  # best-effort: don't fail the save if ml-app is unreachable
+    _sync_ml_user(user_id, user.get("name", ""))
+    for track in data["tracks"]:
+        song_id = track.get("song_id") if isinstance(track, dict) else None
+        if song_id:
+            try:
+                http.post(
+                    f"{ML_APP_URL}/events",
+                    json={"user_id": user_id, "song_id": song_id, "event_type": "save"},
+                    timeout=3,
+                )
+            except http.exceptions.RequestException:
+                pass
+    _trigger_train()
 
     return jsonify({"ok": True, "id": str(result.inserted_id)}), 201
+
+
+@app.route("/api/generate-playlist", methods=["POST"])
+def api_generate_playlist():
+    """Proxy playlist generation request to the ml-app service."""
+    data = request.get_json(silent=True) or {}
+    try:
+        resp = http.post(
+            f"{ML_APP_URL}/generate-playlist",
+            json=data,
+            timeout=15,
+        )
+        return jsonify(resp.json()), resp.status_code
+    except http.exceptions.RequestException as exc:
+        return jsonify({"error": "ML service unavailable", "detail": str(exc)}), 503
+
+
+@app.route("/api/songs")
+def api_songs():
+    """Proxy song list from the ml-app service."""
+    try:
+        resp = http.get(f"{ML_APP_URL}/songs", timeout=5)
+        return jsonify(resp.json()), resp.status_code
+    except http.exceptions.RequestException as exc:
+        return jsonify({"error": "ML service unavailable", "detail": str(exc)}), 503
 
 
 if __name__ == "__main__":

@@ -4,8 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-fastapi = "==0.115.6"
-uvicorn = {extras = ["standard"], version = "==0.34.0"}
+flask = "==3.1.0"
 pandas = "==2.2.3"
 scikit-learn = "==1.6.0"
 pymongo = "==4.10.1"
@@ -13,7 +12,6 @@ pymongo = "==4.10.1"
 [dev-packages]
 pytest = "==8.3.4"
 pytest-cov = "*"
-httpx = "==0.28.1"
 pylint = "*"
 black = "*"
 
